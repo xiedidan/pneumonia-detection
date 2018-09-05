@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 
 from tqdm import tqdm
 
-from datasets.pnuemonia import *
+from datasets.pneumonia import *
 from utils.plot import *
 
 num_classes = 2
@@ -17,7 +17,7 @@ size = [512, 512]
 
 # argparser
 parser = argparse.ArgumentParser(description='Pneumonia detection dataset toolkit')
-parser.add_argument('--root', default='/media/voyager/ssd-ext4/ILSVRC/', help='dataset root path')
+parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--plot', action='store_true', help='plot batch')
 flags = parser.parse_args()
 
@@ -43,13 +43,13 @@ if __name__ == '__main__':
 
     trainLoader = torch.utils.data.DataLoader(
         trainSet,
-        batch_size=4,
+        batch_size=32,
         shuffle=True,
-        num_workers=4,
+        num_workers=8,
         collate_fn=collate,
     )
 
-    if flags.plot:
-        print('Plotting batches')
-        for samples in tqdm(trainLoader):
-            plot_batch(samples)
+    for samples in tqdm(trainLoader):
+        images, gts, ws, hs, ids = samples
+        if flags.plot:
+            plot_batch(images, gts, 2)

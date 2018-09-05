@@ -9,14 +9,14 @@ from tqdm import tqdm
 
 # argparser
 parser = argparse.ArgumentParser(description='Pneumonia detection dataset split tool')
-parser.add_argument('--root', default='/home/voyager/data/kaggle/rsna-pneumonia-detection-challenge/', help='dataset root path')
+parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--ratio', default=0.1, help='val:train sample ratio')
 flags = parser.parse_args()
 
-def pick_val(root, snapshot, ratio):
-    dump_path = os.path.join(root, 'dump/')
-    if not os.path.exists(dump_path):
-        os.mkdir(dump_path)
+def pick_val(root, ratio):
+    val_path = os.path.join(root, 'val/')
+    if not os.path.exists(val_path):
+        os.mkdir(val_path)
 
     train_path = os.path.join(root, 'train/')
     train_list = os.listdir(train_path)
@@ -30,4 +30,4 @@ def pick_val(root, snapshot, ratio):
         shutil.move(src_path, dest_path)
 
 if __name__ == '__main__':
-    pick_val(flags.root, flags.snapshot, flags.ratio)
+    pick_val(flags.root, flags.ratio)
