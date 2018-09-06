@@ -113,8 +113,11 @@ class PneumoniaClassificationDataset(Dataset):
         # load gt
         self.df = pd.read_csv(self.gt_path)
 
-        # TODO : handle train / val
+        self.image_files = os.listdir(self.image_path)
+        self.df = self.df[df['class'].isin(self.image_files)]
+
         self.groups = self.df.groupby('class')
+        print(self.groups.size())
         self.max_class_size = self.groups.size().max()
 
         self.total_len = self.num_classes * self.max_class_size
