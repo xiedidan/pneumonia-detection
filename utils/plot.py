@@ -73,3 +73,11 @@ def show_bboxes(ax, bboxes, labels=None, colors=None):
             ax.text(rect.xy[0], rect.xy[1], labels[i],
                 va='center', ha='center', fontsize=9, color=text_color,
                 bbox=dict(facecolor=color, lw=0))
+
+def plot_scatter(xs, ys):
+    plt.scatter(xs, ys)
+
+    plt.xlabel('x')
+    plt.ylabel('y')
+
+    plt.show()

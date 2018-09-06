@@ -63,7 +63,7 @@ def collate(batch):
 
         images.append(image)
         locs.append(loc.to(torch.float32))
-        confs.append(conf.to(torch.float32))
+        confs.append(conf.to(torch.uint8))
         ws.append(w)
         hs.append(h)
         ids.append(patientId)
