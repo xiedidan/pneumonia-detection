@@ -64,3 +64,20 @@ class DetectionCounter(object):
 
     def get_result(self):
         return self.xs, self.ys, self.ratios, self.levels
+
+class MeanAndStd(object):
+    def __init__(self):
+        self.mean = 0.
+        self.std = 0.
+        self.total = 0
+    
+    def inc(self, images):
+        self.total += len(images)
+
+        for image in images:
+            np_image = image.numpy()
+            self.mean += np.mean(np_image)
+            self.std += np.std(np_image)
+
+    def get_result(self):
+        return self.mean / self.total, self.std / self.total

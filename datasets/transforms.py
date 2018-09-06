@@ -36,6 +36,15 @@ class ToTensor(object):
 
         return image, gt, w, h
 
+class Normalize(object):
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, image, gt, w, h):
+        image = transforms.functional.normalize(image, self.mean, self.std)
+        return image, gt, w, h
+        
 # resize transform
 class Resize(object):
     def __init__(self, size):
