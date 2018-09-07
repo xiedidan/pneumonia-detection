@@ -74,6 +74,42 @@ def show_bboxes(ax, bboxes, labels=None, colors=None):
                 va='center', ha='center', fontsize=9, color=text_color,
                 bbox=dict(facecolor=color, lw=0))
 
+def plot_classification(images, gts, rows):
+    batch_size = len(images)
+    if batch_size // rows < batch_size / rows:
+        cols = batch_size // rows + 1
+    else:
+        cols = batch_size // rows
+
+    images = images.numpy()
+    # gts = gts.numpy()
+
+    plt.ion()
+    f, axs = plt.subplots(rows, cols)
+
+    for i in range(rows):
+        for j in range(cols):
+            idx = i * cols + j
+            if idx < batch_size:
+                image = images[idx]
+            
+                # Tensor shape in [C, H, W]
+                c, h, w = image.shape
+                image_size = np.array([w, h, w, h])
+
+                image = np.transpose(image, (1, 2, 0))
+            
+                axs[i][j].imshow(image.squeeze(), cmap='gray')
+                axs[i][j].set_xticks([])
+                axs[i][j].set_yticks([])
+
+                axs[i][j].set_title('{}'.format(gts[idx]))
+            
+    plt.tight_layout()
+    plt.ioff()
+
+    plt.show()
+
 def plot_scatter(xs, ys):
     plt.scatter(xs, ys)
 

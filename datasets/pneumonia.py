@@ -83,7 +83,10 @@ def classificationCollate(batch):
         image, gt, w, h, patientId = sample
 
         images.append(image)
+
+        gt = torch.tensor(gt, dtype=torch.uint8)
         gts.append(gt)
+
         ws.append(w)
         hs.append(h)
         ids.append(patientId)
@@ -114,10 +117,11 @@ class PneumoniaClassificationDataset(Dataset):
         self.df = pd.read_csv(self.gt_path)
 
         self.image_files = os.listdir(self.image_path)
-        self.df = self.df[df['class'].isin(self.image_files)]
+
+        ids = [filename.split('.')[0] for filename in self.image_files]
+        self.df = self.df[self.df['patientId'].isin(ids)]
 
         self.groups = self.df.groupby('class')
-        print(self.groups.size())
         self.max_class_size = self.groups.size().max()
 
         self.total_len = self.num_classes * self.max_class_size

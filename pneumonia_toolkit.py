@@ -111,14 +111,18 @@ if __name__ == '__main__':
 
         trainLoader = torch.utils.data.DataLoader(
             trainSet,
-            batch_size=32,
+            batch_size=6,
             shuffle=True,
             num_workers=8,
             collate_fn=classificationCollate,
         )
 
-        for i, batch in enumerate(trainLoader):
-            pass
+        for samples in tqdm(trainLoader):
+            images, gts, ws, hs, ids = samples
+            labels = [get_class_name(classMapping, gt.item()) for gt in gts]
+
+            if flags.plot:
+                plot_classification(images, labels, 2)
 
     else: # stage = 'review'
         pass
