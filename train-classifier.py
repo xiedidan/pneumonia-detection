@@ -19,12 +19,11 @@ import torchvision.transforms as transforms
 from resnet import *
 from datasets.pneumonia import *
 from utils.plot import *
-from layers import MultiFrameBoxLoss
 
 # constants & configs
 num_classes = 3
-number_workers = 8
-snapshot_interval = 100
+number_workers = 2
+snapshot_interval = 1000
 pretrained = False
 
 size = [512, 512]
@@ -78,13 +77,9 @@ parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help=
 parser.add_argument('--lock_feature', action='store_true', help='lock feature layers for baseline')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
-parser.add_argument('--loss_device', default='cuda:0', help='device to calculate loss')
 flags = parser.parse_args()
 
-print('Got flags: {}'.format(flags))
-
 device = torch.device(flags.device)
-loss_device = torch.device(flags.loss_device)
 
 # data loader
 '''
@@ -115,7 +110,7 @@ trainSet = PneumoniaClassificationDataset(
     classMapping=classMapping,
     phase='train',
     transform=trainTransform,
-    num_classes=3
+    num_classes=num_classes
 )
 trainLoader = torch.utils.data.DataLoader(
     trainSet,
@@ -149,12 +144,13 @@ if flags.resume:
     best_loss = checkpoint['loss']
     start_epoch = checkpoint['epoch']
     resnet.load_state_dict(checkpoint['net'])
+    updating_parameters = resnet.parameters()
 elif flags.transfer:
     checkpoint = torch.load(flags.checkpoint)
     updating_parameters = resnet.transfer(checkpoint, flags.lock_feature)
 else:
     # train from scratch - init weights
-    resnet.apply(init_weight)
+    # resnet.apply(init_weight)
     updating_parameters = resnet.parameters()
 
 criterion = nn.CrossEntropyLoss()
@@ -172,10 +168,9 @@ def train(epoch):
     train_loss = 0
     batch_count = len(trainLoader)
 
-    for batch_index, (samples, gts) in enumerate(trainLoader):
+    for batch_index, (samples, gts, ws, hs, ids) in enumerate(trainLoader):
         samples = samples.to(device)
-        for index, gt in enumerate(gts):
-            gts[index] = gt.to(loss_device)
+        gts = gts.to(device=device, dtype=torch.long)
 
         optimizer.zero_grad()
 
@@ -183,11 +178,11 @@ def train(epoch):
             outputs = nn.parallel.data_parallel(resnet, samples)
         else:
             outputs = resnet(samples)
-
-        # offload loss to loss_device
-        # TODO : is it possible to calc loss parallelly?
-        loss = criterion(outputs.to(loss_device), gts)
-        loss = loss.to(device)
+        
+        if torch.cuda.device_count() > 1:
+            loss = nn.parallel.data_parallel(criterion, (outputs, gts))
+        else:
+            loss = criterion(outputs, gts)
 
         loss.backward()
         optimizer.step()
@@ -203,7 +198,7 @@ def train(epoch):
         ))
 
         if (batch_index + 1) % snapshot_interval == 0:
-            snapshot(epoch, batch_index, train_loss / (batch_index + 1))
+            snapshot(epoch, batch_index, resnet, train_loss / (batch_index + 1))
 
 def val(epoch):
     print('\nVal')
@@ -214,10 +209,9 @@ def val(epoch):
         batch_count = len(valLoader)
 
         # perfrom forward
-        for batch_index, (samples, gts) in enumerate(valLoader):
+        for batch_index, (samples, gts, ws, hs, ids) in enumerate(valLoader):
             samples = samples.to(device)
-            for index, gt in enumerate(gts):
-                gts[index] = gt.to(loss_device)
+            gts = gts.to(device=device, dtype=torch.long)
 
             if torch.cuda.device_count() > 1:
                 outputs = nn.parallel.data_parallel(resnet, samples)
