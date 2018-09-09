@@ -22,9 +22,13 @@ from utils.plot import *
 
 # constants & configs
 num_classes = 3
-number_workers = 2
 snapshot_interval = 1000
 pretrained = False
+
+# spawned workers on windows take too much gmem
+num_workers = 8
+if sys.platform == 'win32':
+    number_workers = 2
 
 size = [512, 512]
 mean = [0.49043187350911405]
@@ -99,7 +103,7 @@ trainTransform = transforms.Compose([
     transforms.Normalize(mean, std)
 ])
 
-valTransform = Compose([
+valTransform = transforms.Compose([
     transforms.Resize(size=size),
     transforms.ToTensor(),
     transforms.Normalize(mean, std)
@@ -125,7 +129,7 @@ valSet = PneumoniaClassificationDataset(
     classMapping=classMapping,
     phase='val',
     transform=valTransform,
-    num_classes=3
+    num_classes=num_classes
 )
 valLoader = torch.utils.data.DataLoader(
     valSet,
@@ -218,7 +222,7 @@ def val(epoch):
             else:
                 outputs = resnet(samples)
 
-            loss = criterion(output.to(loss_device), gts)
+            loss = criterion(outputs, gts)
 
             val_loss += loss.item()
 
@@ -236,7 +240,7 @@ def val(epoch):
         val_loss /= len(valLoader)
 
         if val_loss < best_loss:
-            print('Saving checkpoint, best loss: {}'.format(best_loss))
+            print('Saving checkpoint, best loss: {}'.format(val_loss))
 
             state = {
                 'net': resnet.state_dict(),
