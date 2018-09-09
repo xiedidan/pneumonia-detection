@@ -16,7 +16,7 @@ import torch.nn.init as init
 import torchvision
 import torchvision.transforms as transforms
 
-from faf import build_faf
+from resnet import *
 from datasets.pneumonia import *
 from utils.plot import *
 from layers import MultiFrameBoxLoss
@@ -25,6 +25,7 @@ from layers import MultiFrameBoxLoss
 num_classes = 3
 number_workers = 8
 snapshot_interval = 100
+pretrained = False
 
 size = [512, 512]
 mean = [0.49043187350911405]
@@ -72,7 +73,9 @@ parser.add_argument('--lr', default=1e-6, type=float, help='learning rate')
 parser.add_argument('--end_epoch', default=200, type=float, help='epcoh to stop training')
 parser.add_argument('--batch_size', default=4, type=int, help='batch size')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--transfer', action='store_true', help='fintune pretrained model')
 parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help='checkpoint file path')
+parser.add_argument('--lock_feature', action='store_true', help='lock feature layers for baseline')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
 parser.add_argument('--loss_device', default='cuda:0', help='device to calculate loss')
@@ -94,6 +97,7 @@ trainTransform = Compose([
     ToTensor()
 ])
 '''
+# TODO : data arguument
 trainTransform = transforms.Compose([
     transforms.Resize(size=size),
     transforms.ToTensor(),
@@ -137,27 +141,25 @@ valLoader = torch.utils.data.DataLoader(
 )
 
 # model
-faf = build_faf('train', cfg=cfg, num_classes=num_classes)
-faf.to(device)
+resnet = resnet152(pretrained, num_classes=num_classes)
+resnet.to(device)
 
-if (flags.resume):
+if flags.resume:
     checkpoint = torch.load(flags.checkpoint)
-    faf.load_state_dict(checkpoint['net'])
     best_loss = checkpoint['loss']
     start_epoch = checkpoint['epoch']
+    resnet.load_state_dict(checkpoint['net'])
+elif flags.transfer:
+    checkpoint = torch.load(flags.checkpoint)
+    updating_parameters = resnet.transfer(checkpoint, flags.lock_feature)
 else:
     # train from scratch - init weights
-    faf.vgg.apply(init_weight)
-    faf.extras.apply(init_weight)
-    faf.loc.apply(init_weight)
-    faf.conf.apply(init_weight)
+    resnet.apply(init_weight)
+    updating_parameters = resnet.parameters()
 
-criterion = MultiFrameBoxLoss(
-    num_classes,
-    loss_device
-)
+criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(
-    faf.parameters(),
+    updating_parameters,
     lr=flags.lr,
     momentum=0.9,
     weight_decay=1e-4
@@ -166,40 +168,37 @@ optimizer = optim.SGD(
 def train(epoch):
     print('\nTraining Epoch: {}'.format(epoch))
 
-    faf.train()
+    resnet.train()
     train_loss = 0
-    anchor = faf.anchors.to(loss_device)
     batch_count = len(trainLoader)
 
     for batch_index, (samples, gts) in enumerate(trainLoader):
         samples = samples.to(device)
         for index, gt in enumerate(gts):
-            gts[index] = [frame.to(loss_device) for frame in gt]
+            gts[index] = gt.to(loss_device)
 
         optimizer.zero_grad()
 
         if torch.cuda.device_count() > 1:
-            loc, conf = nn.parallel.data_parallel(faf, samples)
+            outputs = nn.parallel.data_parallel(resnet, samples)
         else:
-            loc, conf = faf(samples)
+            outputs = resnet(samples)
 
         # offload loss to loss_device
-        loss_l, loss_c = criterion((loc.to(loss_device), conf.to(loss_device), anchor), gts)
-        loss = loss_l + loss_c
+        # TODO : is it possible to calc loss parallelly?
+        loss = criterion(outputs.to(loss_device), gts)
         loss = loss.to(device)
 
         loss.backward()
         optimizer.step()
 
         train_loss += loss.item()
-        print('e:{}/{}, b:{}/{}, b_l:{:.2f} = l{:.2f} + c{:.2f}, e_l:{:.2f}'.format(
+        print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}'.format(
             epoch + 1,
             flags.end_epoch,
             batch_index + 1,
             batch_count,
             loss.item(),
-            loss_l.item(),
-            loss_c.item(),
             train_loss / (batch_index + 1)
         ))
 
@@ -210,55 +209,55 @@ def val(epoch):
     print('\nVal')
 
     with torch.no_grad():
-        faf.eval()
+        resnet.eval()
         val_loss = 0
-        anchor = faf.anchors.to(loss_device)
         batch_count = len(valLoader)
 
         # perfrom forward
         for batch_index, (samples, gts) in enumerate(valLoader):
             samples = samples.to(device)
             for index, gt in enumerate(gts):
-                gts[index] = [frame.to(loss_device) for frame in gt]
+                gts[index] = gt.to(loss_device)
 
             if torch.cuda.device_count() > 1:
-                loc, conf = nn.parallel.data_parallel(faf, samples)
+                outputs = nn.parallel.data_parallel(resnet, samples)
             else:
-                loc, conf = faf(samples)
+                outputs = resnet(samples)
 
-            loss_l, loss_c = criterion((loc.to(loss_device), conf.to(loss_device), anchor), gts)
-            loss = loss_l + loss_c
+            loss = criterion(output.to(loss_device), gts)
 
             val_loss += loss.item()
 
-            print('e:{}/{}, b:{}/{}, b_l:{:.2f} = l{:.2f} + c{:.2f}, e_l:{:.2f}'.format(
+            print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}'.format(
                 epoch + 1,
                 flags.end_epoch,
                 batch_index + 1,
                 batch_count,
                 loss.item(),
-                loss_l.item(),
-                loss_c.item(),
                 val_loss / (batch_index + 1)
             ))
 
         # save checkpoint
         global best_loss
         val_loss /= len(valLoader)
+
         if val_loss < best_loss:
             print('Saving checkpoint, best loss: {}'.format(best_loss))
+
             state = {
-                'net': faf.state_dict(),
+                'net': resnet.state_dict(),
                 'loss': val_loss,
                 'epoch': epoch,
             }
             
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
+
             torch.save(state, './checkpoint/epoch_{:0>5}_loss_{:.5f}.pth'.format(
                 epoch,
                 val_loss
             ))
+
             best_loss = val_loss
 
 # ok, main loop
