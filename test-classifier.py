@@ -93,7 +93,7 @@ def test(epoch):
                 csv.write('patientId,class,classNo,confidence\n')
 
         # perfrom forward
-        for (samples, ws, hs, ids) in tqdm(testLoader):
+        for (samples, gts, ws, hs, ids) in tqdm(testLoader):
             samples = samples.to(device)
 
             if torch.cuda.device_count() > 1:

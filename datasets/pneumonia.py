@@ -156,7 +156,12 @@ class PneumoniaClassificationDataset(Dataset):
             filename = self.image_files[index]
 
             patientId = filename.split('.')[0]
-            # TODO : query gt from df with patientId
+
+            gt = 0 # dummy gt for test phase
+
+            if self.phase == 'val':
+                # TODO : query gt from df with patientId
+                pass
 
         image_file = os.path.join(self.image_path, filename)
         image, w, h = load_dicom_image(image_file)
