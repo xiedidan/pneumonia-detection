@@ -96,7 +96,7 @@ trainTransform = Compose([
     ToTensor()
 ])
 '''
-# data arguument
+# data argument
 trainTransform = transforms.Compose([
     transforms.RandomChoice([
         transforms.Compose([
@@ -222,10 +222,10 @@ def train(epoch):
 
         train_loss += loss.item()
         print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}'.format(
-            epoch + 1,
-            flags.end_epoch,
-            batch_index + 1,
-            batch_count,
+            epoch,
+            flags.end_epoch - 1,
+            batch_index,
+            batch_count - 1,
             loss.item(),
             train_loss / (batch_index + 1)
         ))
@@ -260,10 +260,10 @@ def val(epoch):
             val_loss += loss.item()
 
             print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}'.format(
-                epoch + 1,
-                flags.end_epoch,
-                batch_index + 1,
-                batch_count,
+                epoch,
+                flags.end_epoch - 1,
+                batch_index,
+                batch_count - 1,
                 loss.item(),
                 val_loss / (batch_index + 1)
             ))
