@@ -26,11 +26,11 @@ snapshot_interval = 1000
 pretrained = False
 
 # spawned workers on windows take too much gmem
-num_workers = 8
+number_workers = 8
 if sys.platform == 'win32':
     number_workers = 2
 
-size = [512, 512]
+size = 512
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
 classMapping = {
@@ -96,15 +96,35 @@ trainTransform = Compose([
     ToTensor()
 ])
 '''
-# TODO : data arguument
+# data arguument
 trainTransform = transforms.Compose([
-    transforms.Resize(size=size),
+    transforms.RandomChoice([
+        transforms.Compose([
+            transforms.RandomChoice([
+                transforms.RandomRotation(15, resample=Image.BILINEAR),
+                transforms.RandomAffine(
+                    degrees=10,
+                    translate=(0.1, 0.1),
+                    scale=(0.9, 1./0.9),
+                    shear=10,
+                    resample=Image.BILINEAR
+                )
+            ]),
+            transforms.Resize(size, interpolation=Image.BILINEAR)
+        ]),
+        transforms.RandomResizedCrop(
+            size,
+            scale=(0.9, 1.0),
+            ratio=(0.9, 1./0.9),
+            interpolation=Image.BILINEAR
+        ),
+    ]),
     transforms.ToTensor(),
     transforms.Normalize(mean, std)
 ])
 
 valTransform = transforms.Compose([
-    transforms.Resize(size=size),
+    transforms.Resize(size=size, interpolation=Image.BILINEAR),
     transforms.ToTensor(),
     transforms.Normalize(mean, std)
 ])
@@ -154,15 +174,23 @@ elif flags.transfer:
     updating_parameters = resnet.transfer(checkpoint, flags.lock_feature)
 else:
     # train from scratch - init weights
-    # resnet.apply(init_weight)
     updating_parameters = resnet.parameters()
 
 criterion = nn.CrossEntropyLoss()
+
 optimizer = optim.SGD(
     updating_parameters,
     lr=flags.lr,
     momentum=0.9,
     weight_decay=1e-4
+)
+
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    'min',
+    factor=0.5,
+    patience=5,
+    verbose=True
 )
 
 def train(epoch):
@@ -185,6 +213,7 @@ def train(epoch):
         
         if torch.cuda.device_count() > 1:
             loss = nn.parallel.data_parallel(criterion, (outputs, gts))
+            loss = loss.sum()
         else:
             loss = criterion(outputs, gts)
 
@@ -222,7 +251,11 @@ def val(epoch):
             else:
                 outputs = resnet(samples)
 
-            loss = criterion(outputs, gts)
+            if torch.cuda.device_count() > 1:
+                loss = nn.parallel.data_parallel(criterion, (outputs, gts))
+                loss = loss.sum()
+            else:
+                loss = criterion(outputs, gts)
 
             val_loss += loss.item()
 
@@ -235,10 +268,13 @@ def val(epoch):
                 val_loss / (batch_index + 1)
             ))
 
-        # save checkpoint
         global best_loss
         val_loss /= len(valLoader)
 
+        # update lr
+        scheduler.step(val_loss)
+
+        # save checkpoint
         if val_loss < best_loss:
             print('Saving checkpoint, best loss: {}'.format(val_loss))
 
