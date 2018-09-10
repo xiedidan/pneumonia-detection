@@ -154,14 +154,15 @@ class PneumoniaClassificationDataset(Dataset):
             gt = classIndex
         else: # val and test
             filename = self.image_files[index]
-
             patientId = filename.split('.')[0]
 
             gt = 0 # dummy gt for test phase
 
             if self.phase == 'val':
-                # TODO : query gt from df with patientId
-                pass
+                # query gt from df with patientId
+                rows = self.df[self.df['patientId'] == patientId]
+                row = rows.iloc[0]
+                gt = self.classMapping[row['class']]
 
         image_file = os.path.join(self.image_path, filename)
         image, w, h = load_dicom_image(image_file)
