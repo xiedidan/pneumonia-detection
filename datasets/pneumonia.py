@@ -111,45 +111,61 @@ class PneumoniaClassificationDataset(Dataset):
         self.target_transform = target_transform
 
         self.image_path = os.path.join(self.root, self.phase)
-        self.gt_path = os.path.join(self.root, 'stage_1_detailed_class_info.csv')
 
-        # load gt
-        self.df = pd.read_csv(self.gt_path)
+        if self.phase == 'train' or self.phase == 'val':
+            self.gt_path = os.path.join(self.root, 'stage_1_detailed_class_info.csv')
 
-        self.image_files = os.listdir(self.image_path)
+            # load gt
+            self.df = pd.read_csv(self.gt_path)
 
-        ids = [filename.split('.')[0] for filename in self.image_files]
-        self.df = self.df[self.df['patientId'].isin(ids)]
+            self.image_files = os.listdir(self.image_path)
 
-        self.groups = self.df.groupby('class')
-        self.max_class_size = self.groups.size().max()
+            ids = [filename.split('.')[0] for filename in self.image_files]
+            self.df = self.df[self.df['patientId'].isin(ids)]
 
-        self.total_len = self.num_classes * self.max_class_size
+            if self.phase == 'train':
+                self.groups = self.df.groupby('class')
+                self.max_class_size = self.groups.size().max()
+
+                self.total_len = self.num_classes * self.max_class_size
+            else: # val
+                self.total_len = len(self.image_files)
+        else: # test
+            self.image_files = os.listdir(self.image_path)
+            self.total_len = len(self.image_files)
 
     def __len__(self):
         return self.total_len
 
     def __getitem__(self, index):
-        classIndex = index // self.max_class_size
-        className = get_class_name(self.classMapping, classIndex)
+        if self.phase == 'train':
+            classIndex = index // self.max_class_size
+            className = get_class_name(self.classMapping, classIndex)
 
-        group = self.groups.get_group(className)
-        class_size = group.shape[0]
-        itemIndex = (index % self.max_class_size) % class_size
+            group = self.groups.get_group(className)
+            class_size = group.shape[0]
+            itemIndex = (index % self.max_class_size) % class_size
 
-        row = group.iloc[itemIndex]
-        patientId = row['patientId']
+            row = group.iloc[itemIndex]
+            patientId = row['patientId']
 
-        filename = '{}.dcm'.format(patientId)
+            filename = '{}.dcm'.format(patientId)
+
+            gt = classIndex
+        else: # val and test
+            filename = self.image_files[index]
+
+            patientId = filename.split('.')[0]
+            # TODO : query gt from df with patientId
+
         image_file = os.path.join(self.image_path, filename)
-
         image, w, h = load_dicom_image(image_file)
-        gt = classIndex
 
         if self.transform is not None:
             image = self.transform(image)
 
         return image, gt, w, h, patientId
+
 
 class PneumoniaDetectionDataset(Dataset):
     def __init__(self, root, num_classes=2, phase='train', transform=None, target_transform=None):
