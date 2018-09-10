@@ -92,7 +92,7 @@ def test(epoch):
             with open(flags.save_file, 'w') as csv:
                 csv.write('patientId,class,classNo,confidence\n')
 
-        # perfrom forward
+        # perform forward
         for (samples, gts, ws, hs, ids) in tqdm(testLoader):
             samples = samples.to(device)
 
