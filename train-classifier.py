@@ -269,7 +269,7 @@ def val(epoch):
             ))
 
         global best_loss
-        val_loss /= len(valLoader)
+        val_loss /= batch_count
 
         # update lr
         scheduler.step(val_loss)

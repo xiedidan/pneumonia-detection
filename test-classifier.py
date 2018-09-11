@@ -81,7 +81,7 @@ resnet.to(device)
 checkpoint = torch.load(flags.checkpoint)
 resnet.load_state_dict(checkpoint['net'])
 
-def test(epoch):
+def test():
     print('\nTest')
 
     with torch.no_grad():
@@ -107,8 +107,11 @@ def test(epoch):
             labels = [get_class_name(classMapping, result.item()) for result in results]
 
             if flags.plot:
-                plot_classification(samples, labels, 2)
+                plot_classification(samples.cpu(), labels, 2)
             else:
                 # export to csv - patientId, class, classNo, confidence
                 with open(flags.save_file, 'a') as csv:
                     export_classification_csv(csv, ids, labels, results, max_confs)
+
+if __name__ == '__main__':
+    test()
