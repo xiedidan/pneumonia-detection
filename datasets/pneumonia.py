@@ -174,8 +174,9 @@ class PneumoniaClassificationDataset(Dataset):
 
 
 class PneumoniaDetectionDataset(Dataset):
-    def __init__(self, root, num_classes=2, phase='train', transform=None, target_transform=None):
+    def __init__(self, root, classMapping, num_classes=2, phase='train', transform=None, target_transform=None):
         self.root = root
+        self.classMapping = classMapping
         self.num_classes = num_classes
         self.phase = phase
         self.transform = transform
