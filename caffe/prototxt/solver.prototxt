@@ -1,5 +1,5 @@
-train_net: "models/resNet_pruned/train.prototxt"
-test_net: "models/resNet_pruned/test.prototxt"
+train_net: "caffe/prototxt/train.prototxt"
+test_net: "caffe/prototxt/test.prototxt"
 
 test_iter: 1422
 test_interval: 5000
@@ -23,7 +23,7 @@ solver_mode: GPU
 random_seed: 0
 debug_info: false
 snapshot: 5000
-snapshot_prefix: "models/resNet_pruned/res10_prunde_ft2"
+snapshot_prefix: "caffe/snapshot/resnet"
 
 eval_type: "detection"
 ap_version: "11point"
