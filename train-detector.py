@@ -77,49 +77,6 @@ parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', h
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
 flags = parser.parse_args()
 
-# data
-trainTransform = Compose([
-    RandomResizedCrop(size=size, p=0.7, scale=(0.9, 1.), ratio=(0.9, 1/0.9)),
-    Percentage(size=size),
-    ToTensor()
-])
-
-valTransform = Compose([
-    Resize(size=size),
-    Percentage(size=size),
-    ToTensor(),
-])
-
-trainSet = PneumoniaDetectionDataset(
-    root=flags.root,
-    phase='train',
-    transform=trainTransform,
-    classMapping=classMapping,
-    num_classes=num_classes
-)
-trainLoader = torch.utils.data.DataLoader(
-    trainSet,
-    batch_size=flags.batch_size,
-    shuffle=True,
-    num_workers=number_workers,
-    collate_fn=detectionCollate,
-)
-
-valSet = PneumoniaDetectionDataset(
-    root=flags.root,
-    phase='val',
-    transform=valTransform,
-    classMapping=classMapping,
-    num_classes=num_classes
-)
-valLoader = torch.utils.data.DataLoader(
-    valSet,
-    batch_size=flags.batch_size,
-    shuffle=False,
-    num_workers=number_workers,
-    collate_fn=detectionCollate,
-)
-
 # model
 device_type, device_id = get_device(flags.device)
 
@@ -140,9 +97,6 @@ def train(epoch):
     for batch_index, (images, gts, ws, hs, ids) in enumerate(trainLoader):
         images = images.numpy()
         gts = gts.numpy()
-
-        # load data to caffe memory data layer
-        solver.net.set_input_arrays(images, gts)
 
         # train
         solver.step(1)
@@ -179,7 +133,7 @@ def val(epoch):
         solver.forward()
 
         # get loss from net - should be a scalar
-        loss = solver.net.blobs['SoftmaxWithLoss1'].data[0]
+        loss = solver.net.blobs[loss_layer_name].data[0]
 
         val_loss += loss
 
