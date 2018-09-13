@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 
 import torch
@@ -220,7 +221,7 @@ class ToBbox(object):
 
     def __call__(self, gt, w, h):
         locs_numpy = gt[0].numpy()
-        locs_numpy = locs_numpy @ self.trans_matrix
+        locs_numpy = np.matmul(locs_numpy, self.trans_matrix)
 
         return (torch.from_numpy(locs_numpy), gt[1]), w, h
     
