@@ -37,6 +37,8 @@ def plot_batch(images, gts, rows):
     plt.tight_layout()
     plt.ioff()
 
+    max_window() 
+
     plt.show()
 
 def plot_bbox(ax, bbox, color):
@@ -108,6 +110,8 @@ def plot_classification(images, gts, rows):
     plt.tight_layout()
     plt.ioff()
 
+    max_window()
+
     plt.show()
 
 def plot_scatter(xs, ys):
@@ -116,4 +120,22 @@ def plot_scatter(xs, ys):
     plt.xlabel('x')
     plt.ylabel('y')
 
+    max_window()
+
     plt.show()
+
+# insert this before plt.show()
+def max_window():
+    backend = plt.get_backend()
+
+    if backend == 'TkAgg':
+        mng = plt.get_current_fig_manager()
+        ### works on Ubuntu??? >> did NOT working on windows
+        # mng.resize(*mng.window.maxsize())
+        mng.window.state('zoomed') #works fine on Windows!
+    elif backend == 'wxAgg':
+        mng = plt.get_current_fig_manager()
+        mng.frame.Maximize(True)
+    elif backend == 'Qt4Agg' or backend == 'Qt5Agg':
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
