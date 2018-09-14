@@ -71,7 +71,7 @@ class ConvertFromInts(object):
 
 class SubtractMeans(object):
     def __init__(self, mean):
-        self.mean = np.array(mean, dtype=np.float32)
+        self.mean = np.array(mean, dtype=np.float32).squeeze()
 
     def __call__(self, image, boxes=None, labels=None):
         image = image.astype(np.float32)
@@ -311,7 +311,7 @@ class RandomSampleCrop(object):
 
 class Expand(object):
     def __init__(self, mean):
-        self.mean = mean
+        self.mean = np.array(mean).squeeze()
 
     def __call__(self, image, boxes, labels):
         if random.randint(2):

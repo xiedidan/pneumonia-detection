@@ -31,7 +31,7 @@ pretrained = False
 # spawned workers on windows take too much gmem
 number_workers = 8
 if sys.platform == 'win32':
-    number_workers = 2
+    number_workers = 1
 
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
@@ -167,7 +167,6 @@ def train(epoch):
 
     for batch_index, (images, gts, ws, hs, ids) in enumerate(trainLoader):
         s = images.shape
-        images = images.expand(s[0], 3, s[2], s[3])
         images = images.to(device)
 
         gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]

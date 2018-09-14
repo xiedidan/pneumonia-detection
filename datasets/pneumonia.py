@@ -75,13 +75,14 @@ def detectionCollate(batch):
     for i, sample in enumerate(batch):
         image, gt, w, h, patientId = sample
 
-        images.append(image)
-        gts.append(gt)
+        images.append(torch.tensor(image))
+        gts.append(torch.from_numpy(gt))
         ws.append(w)
         hs.append(h)
         ids.append(patientId)
 
     images = torch.stack(images, 0)
+    images = images.transpose(1, 3)
 
     return images, gts, ws, hs, ids
 
