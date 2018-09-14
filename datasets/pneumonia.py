@@ -32,6 +32,7 @@ def load_dicom_image(filename):
 
     return image, w, h
 
+'''
 def get_groundtruth(df, patientId, w, h):
     lines = df[df['patientId']==patientId]
 
@@ -48,29 +49,41 @@ def get_groundtruth(df, patientId, w, h):
             confs.append(1)
 
     return np.array(locs), np.array(confs)
+'''
+
+def get_groundtruth(df, patientId, w, h):
+    lines = df[df['patientId']==patientId]
+
+    gts = []
+
+    for index, line in lines.iterrows():
+        if line['Target'] == 0 or line['Target'] == 1:
+            # background label
+            gts.append([0, 0, w, h, 0])
+        else:
+            gts.append([line['x'], line['y'], line['width'], line['height'], 1])
+
+    return gts
 
 def detectionCollate(batch):
     images = []
-    locs = []
-    confs = []
+    gts = []
     ws = []
     hs = []
     ids = []
 
     for i, sample in enumerate(batch):
         image, gt, w, h, patientId = sample
-        loc, conf = gt
 
         images.append(image)
-        locs.append(loc.to(torch.float32))
-        confs.append(conf.to(torch.uint8))
+        gts.append(gt)
         ws.append(w)
         hs.append(h)
         ids.append(patientId)
 
     images = torch.stack(images, 0)
 
-    return images, (locs, confs), ws, hs, ids
+    return images, gts, ws, hs, ids
 
 def classificationCollate(batch):
     images = []
@@ -202,12 +215,16 @@ class PneumoniaDetectionDataset(Dataset):
         image_file = os.path.join(self.image_path, filename)
 
         image, w, h = load_dicom_image(image_file)
+        image = np.array(image)
+        image = image[:, :, np.newaxis]
+        image = np.tile(image, (1, 1, 3))
+
         gt = get_groundtruth(self.df, patientId, w, h)
 
         if self.transform is not None:
-            image, gt, w, h = self.transform(image, gt, w, h)
+            gt = np.array(gt, dtype='float')
+            image, boxes, labels = self.transform(image, gt[:, :4], gt[:, 4])
 
-        if self.target_transform is not None:
-            gt, w, h = self.target_transform(gt, w, h)
+        gt = np.hstack((boxes, np.expand_dims(labels, axis=1)))
 
         return image, gt, w, h, patientId

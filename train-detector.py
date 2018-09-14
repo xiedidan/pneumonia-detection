@@ -16,26 +16,15 @@ import torch.nn.init as init
 import torchvision
 import torchvision.transforms as transforms
 
-import caffe
-from caffe import layers as L
-from caffe import params as P
-
 from datasets.pneumonia import *
 from datasets.transforms import *
+from datasets.config import *
 from utils.plot import *
+from utils.augmentations import SSDAugmentation
+from layers.modules import MultiBoxLoss
+from ssd import build_ssd
 
 # constants & configs
-model_path = './caffe/caffemodel/'
-prototxt_path = './caffe/prototxt/'
-
-start_layer_name = 'conv1_1'
-loss_layer_name = 'mbox_loss'
-
-data_blob_name = 'data'
-label_blob_name = 'label'
-loss_blob_name = 'mbox_loss'
-
-num_classes = 2
 snapshot_interval = 1000
 pretrained = False
 
@@ -44,7 +33,6 @@ number_workers = 8
 if sys.platform == 'win32':
     number_workers = 2
 
-size = 512
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
 
@@ -60,20 +48,16 @@ start_epoch = 0
 best_loss = float('inf')
 
 # helper
-def get_device(device):
-    arr = device.split(':')
+def xavier(param):
+    init.xavier_uniform_(param)
 
-    if len(arr) == 1:
-        device_type = 'cpu'
-        device_id = 0
-    else:
-        device_type = 'cuda'
-        device_id = int(arr[1])
-    
-    return device_type, device_id
+def weights_init(m):
+    if isinstance(m, nn.Conv2d):
+        xavier(m.weight.data)
+        m.bias.data.zero_()
 
 # argparser
-parser = argparse.ArgumentParser(description='Pneumonia Classifier Training')
+parser = argparse.ArgumentParser(description='Pneumonia Detector Training')
 parser.add_argument('--lr', default=1e-6, type=float, help='learning rate')
 parser.add_argument('--end_epoch', default=200, type=float, help='epcoh to stop training')
 parser.add_argument('--batch_size', default=4, type=int, help='batch size')
@@ -83,19 +67,26 @@ parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', h
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
 flags = parser.parse_args()
 
+device = torch.device(flags.device)
+cfg = rsna
+
 # data
+'''
 trainTransform = Compose([
-    RandomResizedCrop(size=size, p=0.7, scale=(0.9, 1.), ratio=(0.9, 1/0.9)),
-    Percentage(size=size),
-    ToTensor()
+    SSDAugmentation(cfg['min_dim'], [mean, mean, mean])
+    # Resize(size=cfg['min_dim']),
+    # RandomResizedCrop(size=cfg['min_dim'], p=0.7, scale=(0.9, 1.), ratio=(0.9, 1/0.9)),
+    # Percentage(size=size),
+    # ToTensor()
 ])
+'''
 
 trainSet = PneumoniaDetectionDataset(
     root=flags.root,
     phase='train',
-    transform=trainTransform,
+    transform=SSDAugmentation(cfg['min_dim'], (mean, mean, mean)),
     classMapping=classMapping,
-    num_classes=num_classes
+    num_classes=cfg['num_classes']
 )
 trainLoader = torch.utils.data.DataLoader(
     trainSet,
@@ -106,8 +97,8 @@ trainLoader = torch.utils.data.DataLoader(
 )
 
 valTransform = Compose([
-    Resize(size=size),
-    Percentage(size=size),
+    Resize(size=cfg['min_dim']),
+    # Percentage(size=size),
     ToTensor(),
 ])
 
@@ -116,7 +107,7 @@ valSet = PneumoniaDetectionDataset(
     phase='val',
     transform=valTransform,
     classMapping=classMapping,
-    num_classes=num_classes
+    num_classes=cfg['num_classes']
 )
 valLoader = torch.utils.data.DataLoader(
     valSet,
@@ -127,97 +118,161 @@ valLoader = torch.utils.data.DataLoader(
 )
 
 # model
-device_type, device_id = get_device(flags.device)
+ssd_net = build_ssd('train', cfg['min_dim'], cfg['num_classes'], device)
+net = ssd_net
 
-if device_type == 'cpu':
-    caffe.set_mode_cpu()
+if flags.resume:
+    print('Resuming training, loading {}...'.format(flags.checkpoint))
+    ssd_net.load_weights(flags.checkpoint)
 else:
-    caffe.set_device(device_id)
-    caffe.set_mode_gpu()
-    
-solver = caffe.get_solver(os.path.join(prototxt_path, 'solver.prototxt'))
+    vgg_weights = torch.load(flags.checkpoint)
+    print('Loading base network...')
+    ssd_net.vgg.load_state_dict(vgg_weights)
+
+net.to(device)
+
+if not flags.resume:
+    print('Initializing weights...')
+    # initialize newly added layers' weights with xavier method
+    ssd_net.extras.apply(weights_init)
+    ssd_net.loc.apply(weights_init)
+    ssd_net.conf.apply(weights_init)
+
+optimizer = optim.SGD(
+    net.parameters(),
+    lr=flags.lr,
+    momentum=0.9,
+    weight_decay=1e-4
+)
+criterion = MultiBoxLoss(
+    cfg['num_classes'],
+    0.5,
+    True,
+    0,
+    True,
+    3,
+    0.5,
+    False,
+    device)
 
 def train(epoch):
     print('\nTraining Epoch: {}'.format(epoch))
 
+    net.train()
+
     train_loss = 0
+    loc_loss = 0
+    conf_loss = 0
     batch_count = len(trainLoader)
 
     for batch_index, (images, gts, ws, hs, ids) in enumerate(trainLoader):
-        images = images.numpy()
-        gts = gts.numpy()
+        s = images.shape
+        images = images.expand(s[0], 3, s[2], s[3])
+        images = images.to(device)
 
-        # set data to data layer
-        solver.net.blobs[data_blob_name].data[...] = images
-        solver.net.blobs[label_blob_name].data[...] = gts
+        gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
 
-        # train - do NOT use solver.step(1), or data layer will be overwritten
-        solver.net.forward(start=start_layer_name, end=loss_layer_name)
-        solver.net.backward()
+        # forward
+        if torch.cuda.device_count() > 1:
+            out = nn.parallel.data_parallel(net, images)
+        else:
+            out = net(images)
 
-        # get loss from net - should be a scalar
-        loss = solver.net.blobs[loss_blob_name].data[0]
+        # backward
+        optimizer.zero_grad()
 
-        train_loss += loss
+        if torch.cuda.device_count() > 1:
+            loss_l, loss_c  = nn.parallel.data_parallel(criterion, (out, gts))
+            loss_l = loss_l.squeeze()
+            loss_c = loss_c.squeeze()
+        else:
+            loss_l, loss_c = criterion(out, gts)
 
-        print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}'.format(
+        loss = loss_l + loss_c
+        loss.backward()
+
+        optimizer.step()
+
+        train_loss += loss.item()
+        loc_loss = loss_l.item()
+        conf_loss = loss_c.item()
+
+        print('e:{}/{}, b:{}/{}, b_l:{:.2f} = l_l:{:.2f} + c_l:{:.2f}, e_l:{:.2f}'.format(
             epoch,
             flags.end_epoch - 1,
             batch_index,
             batch_count - 1,
             loss,
+            loc_loss,
+            conf_loss,
             train_loss / (batch_index + 1)
         ))
 
 def val(epoch):
     print('\nVal')
 
-    val_loss = 0
-    batch_count = len(valLoader)
+    with torch.no_grad():
+        net.eval()
 
-    # just perfrom forward on training net
-    for batch_index, (images, gts, ws, hs, ids) in enumerate(valLoader):
-        images = images.numpy()
-        gts = gts.numpy()
+        val_loss = 0
+        loc_loss = 0
+        conf_loss = 0
+        batch_count = len(valLoader)
 
-        # set data to data layer
-        solver.net.blobs[data_blob_name].data[...] = images
-        solver.net.blobs[label_blob_name].data[...] = gts
+        # just perfrom forward on training net
+        for batch_index, (images, gts, ws, hs, ids) in enumerate(valLoader):
+            images = images.to(device)
+            s = images.shape
+            images = images.expand(s[0], 3, s[2], s[3])
 
-        # train - do NOT use solver.step(1), or data layer will be overwritten
-        solver.net.forward(start=start_layer_name, end=loss_layer_name)
-        solver.net.backward()
+            gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
 
-        # get loss from net - should be a scalar
-        loss = solver.net.blobs[loss_blob_name].data[0]
+            # forward
+            if torch.cuda.device_count() > 1:
+                out = nn.parallel.data_parallel(net, images)
+            else:
+                out = net(images)
 
-        val_loss += loss
+            loss_l, loss_c = criterion(out, gts)
+            loss = loss_l + loss_c
 
-        print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}'.format(
-            epoch,
-            flags.end_epoch - 1,
-            batch_index,
-            batch_count - 1,
-            loss,
-            val_loss / (batch_index + 1)
-        ))
+            val_loss += loss.item()
+            loc_loss = loss_l.item()
+            conf_loss = loss_c.item()
 
-    global best_loss
-    val_loss /= batch_count
+            print('e:{}/{}, b:{}/{}, b_l:{:.2f} = l_l:{:.2f} + c_l:{:.2f}, e_l:{:.2f}'.format(
+                epoch,
+                flags.end_epoch - 1,
+                batch_index,
+                batch_count - 1,
+                loss,
+                loc_loss,
+                conf_loss,
+                val_loss / (batch_index + 1)
+            ))
 
-    # save checkpoint
-    if val_loss < best_loss:
-        print('Saving checkpoint, best loss: {}'.format(val_loss))
+        global best_loss
+        val_loss /= batch_count
 
-        if not os.path.isdir(model_path):
-            os.mkdir(model_path)
+        # save checkpoint
+        if val_loss < best_loss:
+            print('Saving checkpoint, best loss: {}'.format(val_loss))
 
-        solver.net.save(os.path.join(
-            model_path,
-            'epoch_{:0>5}_loss_{:.5f}.caffemodel'.format(epoch, val_loss)
-        ))
+            state = {
+                'net': net.state_dict(),
+                'loss': val_loss,
+                'epoch': epoch,
+            }
+            
+            if not os.path.isdir('checkpoint'):
+                os.mkdir('checkpoint')
 
-        best_loss = val_loss
+            torch.save(state, './checkpoint/epoch_{:0>5}_loss_{:.5f}.pth'.format(
+                epoch,
+                val_loss
+            ))
+
+            best_loss = val_loss
 
 # ok, main loop
 if __name__ == '__main__':

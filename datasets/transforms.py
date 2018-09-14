@@ -1,4 +1,6 @@
-# -*- coding: utf-8 -*-
+import random
+import math
+
 import numpy as np
 
 import torch
@@ -64,10 +66,7 @@ class ToTensor(object):
 
     def __call__(self, image, gt, w, h):
         image = transforms.functional.to_tensor(image)
-        gt = (
-            torch.as_tensor(gt[0], dtype=torch.float32),
-            torch.as_tensor(gt[1], dtype=torch.uint8)
-        )
+        gt = torch.as_tensor(gt, dtype=torch.long)
 
         return image, gt, w, h
 
@@ -88,11 +87,11 @@ class Resize(object):
     def __call__(self, image, gt, w, h):
         image = transforms.functional.resize(image, self.size)
 
-        w_ratio = float(self.size[0]) / w
-        h_ratio = float(self.size[1]) / h
-        ratio = np.array([w_ratio, h_ratio, w_ratio, h_ratio], dtype=np.float32)
+        w_ratio = float(self.size) / w
+        h_ratio = float(self.size) / h
+        ratio = np.array([w_ratio, h_ratio, w_ratio, h_ratio, 1], dtype=np.float32)
 
-        gt = (gt[0] * ratio, gt[1])
+        gt = gt * ratio
         
         return image, gt, w, h
 
@@ -221,7 +220,7 @@ class ToBbox(object):
 
     def __call__(self, gt, w, h):
         locs_numpy = gt[0].numpy()
-        locs_numpy = np.matmul(locs_numpy, self.trans_matrix)
+        locs_numpy = locs_numpy @ self.trans_matrix
 
         return (torch.from_numpy(locs_numpy), gt[1]), w, h
     
