@@ -220,9 +220,8 @@ def val(epoch):
 
         # just perfrom forward on training net
         for batch_index, (images, gts, ws, hs, ids) in enumerate(valLoader):
-            images = images.to(device)
             s = images.shape
-            images = images.expand(s[0], 3, s[2], s[3])
+            images = images.to(device)
 
             gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
 
@@ -232,7 +231,13 @@ def val(epoch):
             else:
                 out = net(images)
 
-            loss_l, loss_c = criterion(out, gts)
+            if torch.cuda.device_count() > 1:
+                loss_l, loss_c  = nn.parallel.data_parallel(criterion, (out, gts))
+                loss_l = loss_l.squeeze()
+                loss_c = loss_c.squeeze()
+            else:
+                loss_l, loss_c = criterion(out, gts)
+
             loss = loss_l + loss_c
 
             val_loss += loss.item()
