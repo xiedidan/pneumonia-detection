@@ -2,6 +2,8 @@
 checkpoint/
 snapshot/
 pretrained/
+classifier-checkpoint/
+detector-checkpoint/
 *.csv
 
 # Byte-compiled / optimized / DLL files

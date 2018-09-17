@@ -396,18 +396,33 @@ class PhotometricDistort(object):
         im, boxes, labels = distort(im, boxes, labels)
         return self.rand_light_noise(im, boxes, labels)
 
-
+# for rsna dataset, we have absolute box coords already
 class SSDAugmentation(object):
     def __init__(self, size=300, mean=(104, 117, 123)):
         self.mean = mean
         self.size = size
         self.augment = Compose([
             ConvertFromInts(),
-            ToAbsoluteCoords(),
+            # ToAbsoluteCoords(),
             PhotometricDistort(),
             Expand(self.mean),
             RandomSampleCrop(),
             RandomMirror(),
+            ToPercentCoords(),
+            Resize(self.size),
+            SubtractMeans(self.mean)
+        ])
+
+    def __call__(self, img, boxes, labels):
+        return self.augment(img, boxes, labels)
+
+class SSDTransformation(object):
+    def __init__(self, size=300, mean=(104, 117, 123)):
+        self.mean = mean
+        self.size = size
+        self.augment = Compose([
+            ConvertFromInts(),
+            # ToAbsoluteCoords(),
             ToPercentCoords(),
             Resize(self.size),
             SubtractMeans(self.mean)

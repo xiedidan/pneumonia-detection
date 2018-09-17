@@ -20,7 +20,7 @@ from datasets.pneumonia import *
 from datasets.transforms import *
 from datasets.config import *
 from utils.plot import *
-from utils.augmentations import SSDAugmentation
+from utils.augmentations import *
 from layers.modules import MultiBoxLoss
 from ssd import build_ssd
 
@@ -96,16 +96,18 @@ trainLoader = torch.utils.data.DataLoader(
     collate_fn=detectionCollate,
 )
 
+'''
 valTransform = Compose([
     Resize(size=cfg['min_dim']),
-    # Percentage(size=size),
+    Percentage(size=size),
     ToTensor(),
 ])
+'''
 
 valSet = PneumoniaDetectionDataset(
     root=flags.root,
     phase='val',
-    transform=valTransform,
+    transform=SSDTransformation(cfg['min_dim'], (mean, mean, mean)),
     classMapping=classMapping,
     num_classes=cfg['num_classes']
 )
