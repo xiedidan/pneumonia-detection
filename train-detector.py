@@ -25,7 +25,7 @@ from layers.modules import MultiBoxLoss
 from ssd import build_ssd
 
 # constants & configs
-snapshot_interval = 1000
+snapshot_interval = 50
 pretrained = False
 
 # spawned workers on windows take too much gmem
@@ -45,6 +45,7 @@ classMapping = {
 
 # variables
 start_epoch = 0
+curr_batch = 0
 best_loss = float('inf')
 
 # helper
@@ -55,6 +56,25 @@ def weights_init(m):
     if isinstance(m, nn.Conv2d):
         xavier(m.weight.data)
         m.bias.data.zero_()
+
+def snapshot(epoch, batch, model, loss):
+    print('Taking snapshot, loss: {}'.format(loss))
+
+    state = {
+        'net': model.state_dict(),
+        'loss': loss,
+        'epoch': epoch,
+        'batch': batch
+    }
+    
+    if not os.path.isdir('snapshot'):
+        os.mkdir('snapshot')
+
+    torch.save(state, './snapshot/e_{:0>6}_b_{:0>6}_loss_{:.5f}.pth'.format(
+        epoch,
+        batch,
+        loss
+    ))
 
 # argparser
 parser = argparse.ArgumentParser(description='Pneumonia Detector Training')
@@ -125,10 +145,16 @@ net = ssd_net
 
 if flags.resume:
     print('Resuming training, loading {}...'.format(flags.checkpoint))
-    ssd_net.load_weights(flags.checkpoint)
+    checkpoint = torch.load(flags.checkpoint)
+
+    best_loss = checkpoint['loss']
+    start_epoch = checkpoint['epoch']
+    curr_batch = checkpoint['batch']
+
+    ssd_net.load_state_dict(checkpoint['net'])
 else:
-    vgg_weights = torch.load(flags.checkpoint)
     print('Loading base network...')
+    vgg_weights = torch.load(flags.checkpoint)
     ssd_net.vgg.load_state_dict(vgg_weights)
 
 net.to(device)
@@ -156,6 +182,14 @@ criterion = MultiBoxLoss(
     0.5,
     False,
     device)
+
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    'min',
+    factor=0.1,
+    patience=10,
+    verbose=True
+)
 
 def train(epoch):
     print('\nTraining Epoch: {}'.format(epoch))
@@ -209,6 +243,15 @@ def train(epoch):
             train_loss / (batch_index + 1)
         ))
 
+        # take snapshot
+        iteration = batch_count * epoch + batch_index + 1
+        if iteration % snapshot_interval == 0:
+            snapshot(epoch, batch_index, net, best_loss)
+
+        if epoch == start_epoch:
+            if curr_batch + batch_index + 1 == batch_count:
+                break
+
 def val(epoch):
     print('\nVal')
 
@@ -222,7 +265,6 @@ def val(epoch):
 
         # just perfrom forward on training net
         for batch_index, (images, gts, ws, hs, ids) in enumerate(valLoader):
-            s = images.shape
             images = images.to(device)
 
             gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
@@ -260,6 +302,9 @@ def val(epoch):
         global best_loss
         val_loss /= batch_count
 
+        # update lr
+        scheduler.step(val_loss)
+
         # save checkpoint
         if val_loss < best_loss:
             print('Saving checkpoint, best loss: {}'.format(val_loss))
@@ -268,6 +313,7 @@ def val(epoch):
                 'net': net.state_dict(),
                 'loss': val_loss,
                 'epoch': epoch,
+                'batch': 0
             }
             
             if not os.path.isdir('checkpoint'):
