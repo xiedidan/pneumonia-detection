@@ -42,7 +42,7 @@ coco = {
 }
 
 rsna = {
-    'num_classes': 2, # contains background class
+    'num_classes': 2, # with background class
     'lr_steps': (280000, 360000, 400000),
     'max_iter': 400000,
     'feature_maps': [38, 19, 10, 5, 3, 1],

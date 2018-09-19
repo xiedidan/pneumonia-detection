@@ -57,12 +57,8 @@ def get_groundtruth(df, patientId, w, h):
     gts = []
 
     for index, line in lines.iterrows():
-        if line['Target'] == 0:
-            # background label
-            gts.append([0, 0, w, h, 0])
-        else:
-            # convert [xmin, ymin, width, height] to point-from [xmin, ymin, xmax, ymax]
-            gts.append([line['x'], line['y'], line['x'] + line['width'], line['y'] + line['height'], 1])
+        # convert [xmin, ymin, width, height] to point-from [xmin, ymin, xmax, ymax]
+        gts.append([line['x'], line['y'], line['x'] + line['width'], line['y'] + line['height'], 0])
 
     return gts
 

@@ -210,20 +210,26 @@ def train(epoch):
         gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
 
         # forward
+        '''
         if torch.cuda.device_count() > 1  and flags.device != 'cpu':
             out = nn.parallel.data_parallel(net, images)
         else:
             out = net(images)
+        '''
+        out = net(images)
 
         # backward
         optimizer.zero_grad()
 
+        '''
         if torch.cuda.device_count() > 1 and flags.device != 'cpu':
             loss_l, loss_c  = nn.parallel.data_parallel(criterion, (out, gts))
             loss_l = loss_l.squeeze()
             loss_c = loss_c.squeeze()
         else:
             loss_l, loss_c = criterion(out, gts)
+        '''
+        loss_l, loss_c = criterion(out, gts)
 
         loss = loss_l + loss_c
         loss.backward()
@@ -272,17 +278,23 @@ def val(epoch):
             gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
             
             # forward
+            '''
             if torch.cuda.device_count() > 1 and flags.device != 'cpu':
                 out = nn.parallel.data_parallel(net, images)
             else:
                 out = net(images)
+            '''
+            out = net(images)
 
+            '''
             if torch.cuda.device_count() > 1 and flags.device != 'cpu':
                 loss_l, loss_c  = nn.parallel.data_parallel(criterion, (out, gts))
                 loss_l = loss_l.squeeze()
                 loss_c = loss_c.squeeze()
             else:
                 loss_l, loss_c = criterion(out, gts)
+            '''
+            loss_l, loss_c = criterion(out, gts)
 
             loss = loss_l + loss_c
 
