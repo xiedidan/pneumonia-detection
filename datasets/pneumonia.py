@@ -57,11 +57,12 @@ def get_groundtruth(df, patientId, w, h):
     gts = []
 
     for index, line in lines.iterrows():
-        if line['Target'] == 0 or line['Target'] == 1:
+        if line['Target'] == 0:
             # background label
             gts.append([0, 0, w, h, 0])
         else:
-            gts.append([line['x'], line['y'], line['width'], line['height'], 1])
+            # convert [xmin, ymin, width, height] to point-from [xmin, ymin, xmax, ymax]
+            gts.append([line['x'], line['y'], line['x'] + line['width'], line['y'] + line['height'], 1])
 
     return gts
 
@@ -82,7 +83,8 @@ def detectionCollate(batch):
         ids.append(patientId)
 
     images = torch.stack(images, 0)
-    images = images.transpose(1, 3)
+    images.transpose_(1, 3)
+    images.transpose_(2, 3)
 
     return images, gts, ws, hs, ids
 
@@ -202,10 +204,14 @@ class PneumoniaDetectionDataset(Dataset):
 
             # list images
             self.image_files = os.listdir(self.image_path)
-            self.total_len = len(self.image_files)
+            ids = [filename.split('.')[0] for filename in self.image_files]
 
             # load gt
             self.df = pd.read_csv(self.gt_path)
+            self.df = self.df[self.df['Target'] == 1]
+            self.df = self.df[self.df['patientId'].isin(ids)]
+
+            self.total_len = len(self.df)
         else: # test
             self.classification_path = classification_path
             self.df = pd.read_csv(self.classification_path)
@@ -217,49 +223,30 @@ class PneumoniaDetectionDataset(Dataset):
         return self.total_len
 
     def __getitem__(self, index):
+        row = self.df.iloc[index]
+        patientId = row['patientId']
+
+        filename = '{}.dcm'.format(patientId)
+        image_file = os.path.join(self.image_path, filename)
+
+        image, w, h = load_dicom_image(image_file)
+        image = np.array(image)
+        image = image[:, :, np.newaxis]
+        image = np.tile(image, (1, 1, 3))
+
         if self.phase == 'train' or self.phase == 'val':
-            filename = self.image_files[index]
-
-            patientId = filename.split('.')[0]
-            image_file = os.path.join(self.image_path, filename)
-
-            image, w, h = load_dicom_image(image_file)
-            image = np.array(image)
-            image = image[:, :, np.newaxis]
-            image = np.tile(image, (1, 1, 3))
-
             gt = get_groundtruth(self.df, patientId, w, h)
-
-            if self.transform is not None:
-                gt = np.array(gt, dtype='float')
-                image, boxes, labels = self.transform(image, gt[:, :4], gt[:, 4])
-
-            gt = np.hstack((boxes, np.expand_dims(labels, axis=1)))
-
-            return image, gt, w, h, patientId
         else: # test
-            row = self.df.iloc[index]
-            patientId = row['patientId']
-
-            filename = '{}.dcm'.format(patientId)
-            image_file = os.path.join(self.image_path, filename)
-
-            image, w, h = load_dicom_image(image_file)
-            image = np.array(image)
-            image = image[:, :, np.newaxis]
-            image = np.tile(image, (1, 1, 3))
-
             gt = [[0, 0, w, h, 0]] # dummpy gt
 
-            if self.transform is not None:
-                gt = np.array(gt, dtype='float')
-                image, boxes, labels = self.transform(image, gt[:, :4], gt[:, 4])
+        if self.transform is not None:
+            gt = np.array(gt, dtype='float')
+            image, boxes, labels = self.transform(image, gt[:, :4], gt[:, 4])
 
-            gt = np.hstack((boxes, np.expand_dims(labels, axis=1)))
+        gt = np.hstack((boxes, np.expand_dims(labels, axis=1)))
 
-            return image, gt, w, h, patientId
+        return image, gt, w, h, patientId
 
     def _pick_sample(self, df, classMapping):
         # TODO : more complicated pick method?
         return df[df['classNo'] == classMapping['Lung Opacity']]
-        

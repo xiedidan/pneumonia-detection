@@ -84,6 +84,7 @@ parser.add_argument('--resume', '-r', action='store_true', help='resume from che
 parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help='checkpoint file path')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
+parser.add_argument('--plot', action='store_true', help='plot result')
 flags = parser.parse_args()
 
 device = torch.device(flags.device)
@@ -201,13 +202,15 @@ def train(epoch):
     batch_count = len(trainLoader)
 
     for batch_index, (images, gts, ws, hs, ids) in enumerate(trainLoader):
-        s = images.shape
+        if flags.plot:
+            plot_detection_batch(images, gts, 2)
+
         images = images.to(device)
 
         gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
 
         # forward
-        if torch.cuda.device_count() > 1:
+        if torch.cuda.device_count() > 1  and flags.device != 'cpu':
             out = nn.parallel.data_parallel(net, images)
         else:
             out = net(images)
@@ -215,7 +218,7 @@ def train(epoch):
         # backward
         optimizer.zero_grad()
 
-        if torch.cuda.device_count() > 1:
+        if torch.cuda.device_count() > 1 and flags.device != 'cpu':
             loss_l, loss_c  = nn.parallel.data_parallel(criterion, (out, gts))
             loss_l = loss_l.squeeze()
             loss_c = loss_c.squeeze()
@@ -267,14 +270,14 @@ def val(epoch):
             images = images.to(device)
 
             gts = [gt.to(device=device, dtype=torch.float32) for gt in gts]
-
+            
             # forward
-            if torch.cuda.device_count() > 1:
+            if torch.cuda.device_count() > 1 and flags.device != 'cpu':
                 out = nn.parallel.data_parallel(net, images)
             else:
                 out = net(images)
 
-            if torch.cuda.device_count() > 1:
+            if torch.cuda.device_count() > 1 and flags.device != 'cpu':
                 loss_l, loss_c  = nn.parallel.data_parallel(criterion, (out, gts))
                 loss_l = loss_l.squeeze()
                 loss_c = loss_c.squeeze()

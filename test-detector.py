@@ -75,7 +75,6 @@ testLoader = torch.utils.data.DataLoader(
 )
 
 # model
-# TODO : update parameters
 ssd_net = build_ssd('test', cfg['min_dim'], cfg['num_classes'], device)
 net = ssd_net
 
@@ -125,7 +124,7 @@ def test():
             detections = out.detach()
 
             if flags.plot:
-                plot_detection(images, detections, ws, hs, ids, 2)
+                plot_detection(images.cpu().to(dtype=torch.uint8), detections, ws, hs, ids, 2)
 
             # convert bboxes to absolute coords
             for sample_index in range(detections.size(0)):
@@ -155,6 +154,7 @@ def test():
                     )).astype(np.float32, copy=False)
 
                     all_boxes[class_index][i] = cls_dets
+                    i += 1
 
         # export bboxes
         with open(flags.save_file, 'a') as csv:

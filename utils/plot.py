@@ -1,16 +1,18 @@
+import torch
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib import colors as mcolors
 import numpy as np
 
-def plot_batch(images, gts, rows):
+def plot_detection_batch(images, gts, rows):
     batch_size = len(images)
     if batch_size // rows < batch_size / rows:
         cols = batch_size // rows + 1
     else:
         cols = batch_size // rows
 
-    images = images.numpy()
+    images = images.to(torch.uint8).numpy()
 
     plt.ion()
     f, axs = plt.subplots(rows, cols)
@@ -31,7 +33,8 @@ def plot_batch(images, gts, rows):
                 axs[i][j].set_xticks([])
                 axs[i][j].set_yticks([])
 
-                bboxes = gts[0][idx]
+                bboxes = gts[idx]
+                bboxes = bboxes[:, :4]
                 show_bboxes(axs[i][j], bboxes.numpy() * image_size)
             
     plt.tight_layout()
@@ -134,8 +137,7 @@ def plot_detection(images, detections, ws, hs, ids, rows):
             if idx < batch_size:
                 image = images[idx]
 
-                w = ws[idx]
-                h = hs[idx]
+                c, h, w = image.shape
                 title = ids[idx]
 
                 # draw image and title
@@ -156,7 +158,7 @@ def plot_detection(images, detections, ws, hs, ids, rows):
                 dets = torch.masked_select(dets, mask).view(-1, 5)
 
                 if dets.dim() != 0:
-                    boxes = dets[: 1:]
+                    boxes = dets[:, 1:]
                     boxes[:, 0] *= w
                     boxes[:, 2] *= w
                     boxes[:, 1] *= h
