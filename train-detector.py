@@ -36,11 +36,10 @@ if sys.platform == 'win32':
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
 
-# be ware - this is different from mapping in classification
 classMapping = {
     'Normal': 0,
-    'No Lung Opacity / Not Normal': 0,
-    'Lung Opacity': 1
+    'No Lung Opacity / Not Normal': 1,
+    'Lung Opacity': 2
 }
 
 # variables
@@ -237,7 +236,7 @@ def train(epoch):
             flags.end_epoch - 1,
             batch_index,
             batch_count - 1,
-            loss,
+            loss.item(),
             loc_loss,
             conf_loss,
             train_loss / (batch_index + 1)
@@ -293,7 +292,7 @@ def val(epoch):
                 flags.end_epoch - 1,
                 batch_index,
                 batch_count - 1,
-                loss,
+                loss.item(),
                 loc_loss,
                 conf_loss,
                 val_loss / (batch_index + 1)

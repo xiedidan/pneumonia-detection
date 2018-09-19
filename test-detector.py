@@ -6,6 +6,7 @@ import os
 import pickle
 import argparse
 import itertools
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -36,11 +37,10 @@ if sys.platform == 'win32':
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
 
-# be ware - this is different from mapping in classification
 classMapping = {
     'Normal': 0,
-    'No Lung Opacity / Not Normal': 0,
-    'Lung Opacity': 1
+    'No Lung Opacity / Not Normal': 1,
+    'Lung Opacity': 2
 }
 
 # argparser
@@ -50,7 +50,7 @@ parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help=
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
 parser.add_argument('--plot', action='store_true', help='plot result')
-parser.add_argument('--classfication_file', default='./classification.csv', type=str, help='Classifier results')
+parser.add_argument('--classification_file', default='./classification.csv', type=str, help='Classifier results')
 parser.add_argument('--save_file', default='./detection.csv', type=str, help='Filename to save results')
 flags = parser.parse_args()
 
@@ -58,13 +58,13 @@ device = torch.device(flags.device)
 cfg = rsna
 
 # data
-# TODO : transform without gt
 testSet = PneumoniaDetectionDataset(
     root=flags.root,
     phase='test',
     transform=SSDTransformation(cfg['min_dim'], (mean, mean, mean)),
     classMapping=classMapping,
-    num_classes=cfg['num_classes']
+    num_classes=cfg['num_classes'],
+    classification_path=flags.classification_file
 )
 testLoader = torch.utils.data.DataLoader(
     testSet,
@@ -108,18 +108,24 @@ def test():
 
         i = 0
 
-        for batch_index, (images, gts, ws, hs, ids) in enumerate(testLoader):
+        for (images, gts, ws, hs, ids) in tqdm(testLoader):
             images = images.to(device)
 
             # forward
+            '''
             if torch.cuda.device_count() > 1:
                 out = nn.parallel.data_parallel(net, images)
             else:
                 out = net(images)
+            '''
+            out = net(images)
 
             # detections.shape = [batch_size, num_classes, num_detections, 5]
             # detection = [score, xmin, ymin, xmax, ymax]
             detections = out.detach()
+
+            if flags.plot:
+                plot_detection(images, detections, ws, hs, ids, 2)
 
             # convert bboxes to absolute coords
             for sample_index in range(detections.size(0)):
@@ -136,7 +142,7 @@ def test():
                     if dets.dim() == 0:
                         continue # jump to next class
                     
-                    boxes = dets[: 1:]
+                    boxes = dets[:, 1:]
                     boxes[:, 0] *= w
                     boxes[:, 2] *= w
                     boxes[:, 1] *= h
@@ -150,11 +156,9 @@ def test():
 
                     all_boxes[class_index][i] = cls_dets
 
-            # export bboxes
-            with open(flags.save_file, 'a') as csv:
-                export_detection_csv(csv, all_ids, all_boxes[1, :])
-
-            # TODO : plot
+        # export bboxes
+        with open(flags.save_file, 'a') as csv:
+            export_detection_csv(csv, all_ids, all_boxes[1])
 
 # ok, main loop
 if __name__ == '__main__':

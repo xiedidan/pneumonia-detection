@@ -92,6 +92,7 @@ def plot_classification(images, gts, rows):
     for i in range(rows):
         for j in range(cols):
             idx = i * cols + j
+
             if idx < batch_size:
                 image = images[idx]
             
@@ -107,6 +108,67 @@ def plot_classification(images, gts, rows):
 
                 axs[i][j].set_title('{}'.format(gts[idx]))
             
+    plt.tight_layout()
+    plt.ioff()
+
+    max_window()
+
+    plt.show()
+
+def plot_detection(images, detections, ws, hs, ids, rows):
+    batch_size = len(images)
+    if batch_size // rows < batch_size / rows:
+        cols = batch_size // rows + 1
+    else:
+        cols = batch_size // rows
+
+    images = images.numpy()
+
+    plt.ion()
+    f, axs = plt.subplots(rows, cols)
+
+    for i in range(rows):
+        for j in range(cols):
+            idx = i * cols + j
+
+            if idx < batch_size:
+                image = images[idx]
+
+                w = ws[idx]
+                h = hs[idx]
+                title = ids[idx]
+
+                # draw image and title
+                image = np.transpose(image, (1, 2, 0))
+            
+                axs[i][j].imshow(image.squeeze(), cmap='gray')
+                axs[i][j].set_xticks([])
+                axs[i][j].set_yticks([])
+
+                axs[i][j].set_title('{}'.format(title))
+
+                # draw bboxes
+                # problem specific - we have only one foreground class
+                dets = detections[idx, 1, :]
+
+                # only keep score > 0.
+                mask = dets[:, 0].gt(0.).expand(5, dets.size(0)).t()
+                dets = torch.masked_select(dets, mask).view(-1, 5)
+
+                if dets.dim() != 0:
+                    boxes = dets[: 1:]
+                    boxes[:, 0] *= w
+                    boxes[:, 2] *= w
+                    boxes[:, 1] *= h
+                    boxes[:, 3] *= h
+                    scores = dets[:, 0].cpu().numpy()
+
+                    show_bboxes(
+                        axs[i][j],
+                        boxes,
+                        ['{:.2f}'.format(s) for s in scores]
+                    )
+
     plt.tight_layout()
     plt.ioff()
 
