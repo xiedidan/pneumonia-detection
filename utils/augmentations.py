@@ -318,7 +318,8 @@ class Expand(object):
             return image, boxes, labels
 
         height, width, depth = image.shape
-        ratio = random.uniform(1, 4)
+        # ratio = random.uniform(1, 4)
+        ratio = random.uniform(1, 1.1) # expand slightly
         left = random.uniform(0, width*ratio - width)
         top = random.uniform(0, height*ratio - height)
 
@@ -404,10 +405,10 @@ class SSDAugmentation(object):
         self.augment = Compose([
             ConvertFromInts(),
             # ToAbsoluteCoords(),
-            PhotometricDistort(),
+            # PhotometricDistort(),
             Expand(self.mean),
             RandomSampleCrop(),
-            RandomMirror(),
+            # RandomMirror(),
             ToPercentCoords(),
             Resize(self.size),
             SubtractMeans(self.mean)

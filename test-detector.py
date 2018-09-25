@@ -34,8 +34,9 @@ number_workers = 8
 if sys.platform == 'win32':
     number_workers = 1
 
-mean = [0.49043187350911405]
-std = [0.22854086980778032]
+mean = [125]
+# mean = [0.49043187350911405]
+# std = [0.22854086980778032]
 
 classMapping = {
     'Normal': 0,

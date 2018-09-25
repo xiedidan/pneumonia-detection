@@ -245,4 +245,4 @@ class PneumoniaDetectionDataset(Dataset):
 
     def _pick_sample(self, df, classMapping):
         # TODO : more complicated pick method?
-        return df[df['classNo'] == classMapping['Lung Opacity']]
+        return df[df['classNo'] != classMapping['Normal']]
