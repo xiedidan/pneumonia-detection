@@ -31,7 +31,7 @@ pretrained = False
 # spawned workers on windows take too much gmem
 number_workers = 8
 if sys.platform == 'win32':
-    number_workers = 1
+    number_workers = 4
 
 mean = [125]
 # mean = [0.49043187350911405]
