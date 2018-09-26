@@ -25,6 +25,7 @@ from utils.augmentations import *
 from utils.export import export_detection_csv
 from layers.modules import MultiBoxLoss
 from ssd import build_ssd
+from utils.filter import *
 
 # constants & configs
 pretrained = False
@@ -139,6 +140,10 @@ def test():
                     # only keep score > 0.
                     mask = dets[:, 0].gt(0.).expand(5, dets.size(0)).t()
                     dets = torch.masked_select(dets, mask).view(-1, 5)
+
+                    # filter
+                    dets = check_bbox(dets)
+
                     if dets.dim() == 0:
                         continue # jump to next class
                     
@@ -160,6 +165,17 @@ def test():
         # export bboxes
         with open(flags.save_file, 'a') as csv:
             export_detection_csv(csv, all_ids, all_boxes[1])
+
+            df = pd.read_csv(flags.classification_file)
+            other_ids = []
+            dummy_dets = []
+
+            for index, line in df.iterrows():
+                if line['patientId'] not in all_ids:
+                    other_ids.append(line['patientId'])
+                    dummy_dets.append([])
+
+            export_detection_csv(csv, other_ids, dummy_dets)
 
 # ok, main loop
 if __name__ == '__main__':

@@ -5,6 +5,8 @@ import matplotlib.patches as patches
 from matplotlib import colors as mcolors
 import numpy as np
 
+from utils.filter import *
+
 def plot_detection_batch(images, gts, rows):
     batch_size = len(images)
     if batch_size // rows < batch_size / rows:
@@ -156,6 +158,7 @@ def plot_detection(images, detections, ws, hs, ids, rows):
                 # only keep score > 0.
                 mask = dets[:, 0].gt(0.).expand(5, dets.size(0)).t()
                 dets = torch.masked_select(dets, mask).view(-1, 5)
+                dets = check_bbox(dets)
 
                 if dets.dim() != 0:
                     boxes = dets[:, 1:]
