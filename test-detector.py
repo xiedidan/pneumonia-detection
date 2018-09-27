@@ -54,6 +54,7 @@ parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
 parser.add_argument('--plot', action='store_true', help='plot result')
 parser.add_argument('--classification_file', default='./classification.csv', type=str, help='Classifier results')
 parser.add_argument('--save_file', default='./detection.csv', type=str, help='Filename to save results')
+parser.add_argument('--dump_file', default='./detection.pth', type=str, help='Filename to dump results, for next stage')
 flags = parser.parse_args()
 
 device = torch.device(flags.device)
@@ -161,6 +162,14 @@ def test():
 
                     all_boxes[class_index][i] = cls_dets
                     i += 1
+
+        # serialize
+        results = {
+            'bboxes': all_boxes[1],
+            'ids': all_ids
+        }
+        with open(flags.dump_file, 'wb') as dump:
+            pickle.dump(results, dump)
 
         # export bboxes
         with open(flags.save_file, 'a') as csv:
