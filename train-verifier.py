@@ -22,6 +22,12 @@ from utils.plot import *
 
 # constants & configs
 num_classes = 3
+classMapping = {
+    'Normal': 0,
+    'No Lung Opacity / Not Normal': 1,
+    'Lung Opacity': 2
+}
+
 snapshot_interval = 1000
 pretrained = False
 
@@ -66,8 +72,8 @@ def snapshot(epoch, batch, model, loss):
     ))
 
 # argparser
-parser = argparse.ArgumentParser(description='Pneumonia Classifier Training')
-parser.add_argument('--lr', default=1e-6, type=float, help='learning rate')
+parser = argparse.ArgumentParser(description='Pneumonia Verifier Training')
+parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 parser.add_argument('--end_epoch', default=200, type=float, help='epcoh to stop training')
 parser.add_argument('--batch_size', default=4, type=int, help='batch size')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
@@ -76,6 +82,7 @@ parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help=
 parser.add_argument('--lock_feature', action='store_true', help='lock feature layers for baseline')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
+parser.add_argument('--plot', action='store_true', help='plot images')
 flags = parser.parse_args()
 
 device = torch.device(flags.device)
@@ -105,7 +112,7 @@ trainTransform = transforms.Compose([
                     resample=Image.BILINEAR
                 )
             ]),
-            transforms.Resize(size, interpolation=Image.BILINEAR)
+            transforms.Resize((size, size), interpolation=Image.BILINEAR)
         ]),
         transforms.RandomResizedCrop(
             size,
@@ -119,12 +126,12 @@ trainTransform = transforms.Compose([
 ])
 
 valTransform = transforms.Compose([
-    transforms.Resize(size=size, interpolation=Image.BILINEAR),
+    transforms.Resize(size=(size, size), interpolation=Image.BILINEAR),
     transforms.ToTensor(),
     transforms.Normalize(mean, std)
 ])
 
-trainSet = PneumoniaClassificationDataset(
+trainSet = PneumoniaVerificationDataset(
     root=flags.root,
     classMapping=classMapping,
     phase='train',
@@ -139,7 +146,7 @@ trainLoader = torch.utils.data.DataLoader(
     collate_fn=classificationCollate,
 )
 
-valSet = PneumoniaClassificationDataset(
+valSet = PneumoniaVerificationDataset(
     root=flags.root,
     classMapping=classMapping,
     phase='val',
@@ -183,8 +190,8 @@ optimizer = optim.SGD(
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(
     optimizer,
     'min',
-    factor=0.5,
-    patience=5,
+    factor=0.25,
+    patience=10,
     verbose=True
 )
 
@@ -196,6 +203,9 @@ def train(epoch):
     batch_count = len(trainLoader)
 
     for batch_index, (samples, gts, ws, hs, ids) in enumerate(trainLoader):
+        if flags.plot:
+            plot_classification(samples.cpu(), gts.cpu(), 2)
+
         samples = samples.to(device)
         gts = gts.to(device=device, dtype=torch.long)
 
@@ -292,5 +302,6 @@ def val(epoch):
 # ok, main loop
 if __name__ == '__main__':
     for epoch in range(start_epoch, flags.end_epoch):
+        scheduler.step(best_loss)
         train(epoch)
         val(epoch)

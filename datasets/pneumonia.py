@@ -245,11 +245,16 @@ class PneumoniaDetectionDataset(Dataset):
 
     def _pick_sample(self, df, classMapping):
         # TODO : more complicated pick method?
-        return df[df['classNo'] != classMapping['Normal']]
+        # return df[df['classNo'] != classMapping['Normal']]
+
+        # now let SSD handle all images
+        return df
 
 class PneumoniaVerificationDataset(Dataset):
-    def __init__(self, root, crop_ratio=0.25, phase='train', transform=None, target_transform=None):
+    def __init__(self, root, classMapping, num_classes=3, crop_ratio=1.25, phase='train', transform=None, target_transform=None):
         self.root = root
+        self.classMapping = classMapping
+        self.num_classes = num_classes
         self.crop_ratio = crop_ratio
         self.phase = phase
         self.transform = transform
@@ -258,20 +263,26 @@ class PneumoniaVerificationDataset(Dataset):
         self.image_path = os.path.join(self.root, self.phase)
 
         if self.phase == 'train' or self.phase == 'val':
+            self.class_path = os.path.join(self.root, 'stage_1_detailed_class_info.csv')
             self.gt_path = os.path.join(self.root, 'stage_1_train_labels.csv')
+
+            # list image files
+            self.image_files = os.listdir(self.image_path)
+            ids = [filename.split('.')[0] for filename in self.image_files]
+
+            # load class
+            self.class_df = pd.read_csv(self.class_path)
+            self.class_df = self.class_df[self.class_df['patientId'].isin(ids)]
+            self.class_groups = self.class_df.groupby('class')
 
             # load gt
             self.df = pd.read_csv(self.gt_path)
-
-            self.image_files = os.listdir(self.image_path)
-
-            ids = [filename.split('.')[0] for filename in self.image_files]
             self.df = self.df[self.df['patientId'].isin(ids)]
 
             self.target_df = self.df[self.df['Target'] == 1]
             self.background_df = self.df[self.df['Target'] == 0]
 
-            self.total_len = 2 * len(self.target_df)
+            self.total_len = self.num_classes * len(self.target_df)
         else: # test
             self.image_files = os.listdir(self.image_path)
             self.total_len = len(self.image_files)
@@ -280,46 +291,75 @@ class PneumoniaVerificationDataset(Dataset):
         return self.total_len
 
     def __getitem__(self, index):
-        if self.phase == 'train':
-            if index < len(self.target_df):
+        if self.phase == 'train' or self.phase == 'val':
+            target_offset = (self.num_classes - 1) * len(self.target_df)
+
+            if index >= target_offset: # target
                 # get sample from target
-                row = self.target_df.iloc(index)
+                row = self.target_df.iloc[index - target_offset]
                 patientId = row['patientId']
 
-                # TODO : crop
+                # read image
+                filename = '{}.dcm'.format(patientId)
+                image_file = os.path.join(self.image_path, filename)
+                image, _, __ = load_dicom_image(image_file)
 
-                gt = 1
-            else:
-                # TODO : randomly pick a crop
+                x = row['x'] - row['width'] * (self.crop_ratio - 1.) / 2.
+                y = row['y'] - row['height'] * (self.crop_ratio - 1.) / 2.
+                w = row['width'] * self.crop_ratio
+                h = row['height'] * self.crop_ratio
 
-                gt = 0
+                # crop
+                crop = transforms.functional.crop(image, y, x, h, w)
 
-            group = self.groups.get_group(className)
-            class_size = group.shape[0]
-            itemIndex = (index % self.max_class_size) % class_size
+                gt = self.classMapping['Lung Opacity']
+            else: # background
+                # get class_index and group size
+                target_len = len(self.target_df)
 
-            row = group.iloc[itemIndex]
-            patientId = row['patientId']
+                class_index = index // target_len
 
-            filename = '{}.dcm'.format(patientId)
+                class_name = get_class_name(self.classMapping, class_index)
+                group = self.class_groups.get_group(class_name)
 
-            gt = classIndex
-        else: # val and test
-            filename = self.image_files[index]
-            patientId = filename.split('.')[0]
+                class_size = group.shape[0]
 
-            gt = 0 # dummy gt for test phase
+                if self.phase == 'train':
+                    # randomly pick a target bbox and background image
+                    target_index = random.randint(0, target_len - 1)
+                    item_index = random.randint(0, class_size - 1)
+                else: # val
+                    # get bbox from target
+                    target_index = index % target_len
+                    item_index = (index % target_len) % class_size
+                
+                # get target bbox
+                target_row = self.target_df.iloc[target_index]
 
-            if self.phase == 'val':
-                # query gt from df with patientId
-                rows = self.df[self.df['patientId'] == patientId]
-                row = rows.iloc[0]
-                gt = self.classMapping[row['class']]
+                # get image file from background group
+                row = group.iloc[item_index]
+                patientId = row['patientId']
 
-        image_file = os.path.join(self.image_path, filename)
-        image, w, h = load_dicom_image(image_file)
+                # read image
+                filename = '{}.dcm'.format(patientId)
+                image_file = os.path.join(self.image_path, filename)
+                image, _, __ = load_dicom_image(image_file)
+
+                # crop background image with target bbox
+                x = target_row['x'] - target_row['width'] * (self.crop_ratio - 1.) / 2.
+                y = target_row['y'] - target_row['height'] * (self.crop_ratio - 1.) / 2.
+                w = target_row['width'] * self.crop_ratio
+                h = target_row['height'] * self.crop_ratio
+
+                # crop
+                crop = transforms.functional.crop(image, y, x, h, w)
+
+                gt = class_index # equals to self.classMapping[row['class']]
+
+        else: # test
+            pass
 
         if self.transform is not None:
-            image = self.transform(image)
+            crop = self.transform(crop)
 
-        return image, gt, w, h, patientId
+        return crop, gt, w, h, patientId
