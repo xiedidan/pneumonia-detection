@@ -1,5 +1,6 @@
 import sys
 import os
+import pickle
 import math
 
 import pydicom
@@ -251,7 +252,7 @@ class PneumoniaDetectionDataset(Dataset):
         return df
 
 class PneumoniaVerificationDataset(Dataset):
-    def __init__(self, root, classMapping, num_classes=3, crop_ratio=1.25, phase='train', transform=None, target_transform=None):
+    def __init__(self, root, classMapping, num_classes=3, crop_ratio=1.25, phase='train', transform=None, target_transform=None, detection_path='./detection.pth'):
         self.root = root
         self.classMapping = classMapping
         self.num_classes = num_classes
@@ -259,6 +260,7 @@ class PneumoniaVerificationDataset(Dataset):
         self.phase = phase
         self.transform = transform
         self.target_transform = target_transform
+        self.detection_path = detection_path
 
         self.image_path = os.path.join(self.root, self.phase)
 
@@ -285,7 +287,15 @@ class PneumoniaVerificationDataset(Dataset):
             self.total_len = self.num_classes * len(self.target_df)
         else: # test
             self.image_files = os.listdir(self.image_path)
-            self.total_len = len(self.image_files)
+
+            with open(self.detection_path, 'rb') as dump:
+                detections = pickle.load(dump)
+            self.ids = detections['ids']
+            self.bboxes = detections['bboxes']
+
+            self.total_len = 0
+            for bboxes in self.bboxes:
+                self.total_len += len(bboxes)
 
     def __len__(self):
         return self.total_len
@@ -355,9 +365,46 @@ class PneumoniaVerificationDataset(Dataset):
                 crop = transforms.functional.crop(image, y, x, h, w)
 
                 gt = class_index # equals to self.classMapping[row['class']]
-
         else: # test
-            pass
+            patient_index = 0
+            bbox_count = 0
+            bbox_index = 0
+
+            # search for patient_index and bbox_index
+            for i, bboxes in enumerate(self.bboxes):
+                lower_bound = bbox_count
+                upper_bound = bbox_count + len(bboxes)
+
+                if lower_bound <= index < upper_bound:
+                    patient_index = i
+                    bbox_index = index - lower_bound
+                    break
+                else:
+                    bbox_count += len(bboxes)
+
+            bbox = self.bboxes[patient_index, bbox_index, :4]
+            patientId = self.ids[patient_index]
+
+            # read image
+            filename = '{}.dcm'.format(patientId)
+            image_file = os.path.join(self.image_path, filename)
+            image, _, __ = load_dicom_image(image_file)
+
+            # crop background image with target bbox
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+
+            x = bbox[0] - w * (self.crop_ratio - 1.) / 2.
+            y = bbox[1] - h * (self.crop_ratio - 1.) / 2.
+            w = w * self.crop_ratio
+            h = h * self.crop_ratio
+
+            # crop
+            crop = transforms.functional.crop(image, y, x, h, w)
+
+            # use gt to pass bbox (not in point form)
+            gt = self.bboxes[patient_index, bbox_index, :4]
+
 
         if self.transform is not None:
             crop = self.transform(crop)
