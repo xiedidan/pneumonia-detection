@@ -246,3 +246,80 @@ class PneumoniaDetectionDataset(Dataset):
     def _pick_sample(self, df, classMapping):
         # TODO : more complicated pick method?
         return df[df['classNo'] != classMapping['Normal']]
+
+class PneumoniaVerificationDataset(Dataset):
+    def __init__(self, root, crop_ratio=0.25, phase='train', transform=None, target_transform=None):
+        self.root = root
+        self.crop_ratio = crop_ratio
+        self.phase = phase
+        self.transform = transform
+        self.target_transform = target_transform
+
+        self.image_path = os.path.join(self.root, self.phase)
+
+        if self.phase == 'train' or self.phase == 'val':
+            self.gt_path = os.path.join(self.root, 'stage_1_train_labels.csv')
+
+            # load gt
+            self.df = pd.read_csv(self.gt_path)
+
+            self.image_files = os.listdir(self.image_path)
+
+            ids = [filename.split('.')[0] for filename in self.image_files]
+            self.df = self.df[self.df['patientId'].isin(ids)]
+
+            self.target_df = self.df[self.df['Target'] == 1]
+            self.background_df = self.df[self.df['Target'] == 0]
+
+            self.total_len = 2 * len(self.target_df)
+        else: # test
+            self.image_files = os.listdir(self.image_path)
+            self.total_len = len(self.image_files)
+
+    def __len__(self):
+        return self.total_len
+
+    def __getitem__(self, index):
+        if self.phase == 'train':
+            if index < len(self.target_df):
+                # get sample from target
+                row = self.target_df.iloc(index)
+                patientId = row['patientId']
+
+                # TODO : crop
+
+                gt = 1
+            else:
+                # TODO : randomly pick a crop
+
+                gt = 0
+
+            group = self.groups.get_group(className)
+            class_size = group.shape[0]
+            itemIndex = (index % self.max_class_size) % class_size
+
+            row = group.iloc[itemIndex]
+            patientId = row['patientId']
+
+            filename = '{}.dcm'.format(patientId)
+
+            gt = classIndex
+        else: # val and test
+            filename = self.image_files[index]
+            patientId = filename.split('.')[0]
+
+            gt = 0 # dummy gt for test phase
+
+            if self.phase == 'val':
+                # query gt from df with patientId
+                rows = self.df[self.df['patientId'] == patientId]
+                row = rows.iloc[0]
+                gt = self.classMapping[row['class']]
+
+        image_file = os.path.join(self.image_path, filename)
+        image, w, h = load_dicom_image(image_file)
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        return image, gt, w, h, patientId
