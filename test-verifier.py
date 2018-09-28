@@ -76,6 +76,7 @@ testSet = PneumoniaVerificationDataset(
     classMapping=classMapping,
     phase='test',
     transform=testTransform,
+    thumb_transform=testTransform,
     num_classes=num_classes,
     detection_path=flags.detection_file
 )

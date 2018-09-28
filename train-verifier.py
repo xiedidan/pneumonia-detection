@@ -136,6 +136,7 @@ trainSet = PneumoniaVerificationDataset(
     classMapping=classMapping,
     phase='train',
     transform=trainTransform,
+    thumb_transform=trainTransform,
     num_classes=num_classes
 )
 trainLoader = torch.utils.data.DataLoader(
@@ -151,6 +152,7 @@ valSet = PneumoniaVerificationDataset(
     classMapping=classMapping,
     phase='val',
     transform=valTransform,
+    thumb_transform=valTransform,
     num_classes=num_classes
 )
 valLoader = torch.utils.data.DataLoader(

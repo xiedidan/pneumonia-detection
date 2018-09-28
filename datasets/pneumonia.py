@@ -276,14 +276,14 @@ class PneumoniaDetectionDataset(Dataset):
         return df
 
 class PneumoniaVerificationDataset(Dataset):
-    def __init__(self, root, classMapping, num_classes=3, crop_ratio=1.25, phase='train', transform=None, target_transform=None, detection_path='./detection.pth'):
+    def __init__(self, root, classMapping, num_classes=3, crop_ratio=1.25, phase='train', transform=None, thumb_transform=None, detection_path='./detection.pth'):
         self.root = root
         self.classMapping = classMapping
         self.num_classes = num_classes
         self.crop_ratio = crop_ratio
         self.phase = phase
         self.transform = transform
-        self.target_transform = target_transform
+        self.thumb_transform = thumb_transform
         self.detection_path = detection_path
 
         self.image_path = os.path.join(self.root, self.phase)
@@ -432,4 +432,10 @@ class PneumoniaVerificationDataset(Dataset):
         if self.transform is not None:
             crop = self.transform(crop)
 
-        return crop, gt, w, h, patientId
+        if self.thumb_transform is not None:
+            image = self.thumb_transform(image)
+
+        sample = torch.stack([crop, image], dim=0)
+        sample = torch.squeeze(sample)
+
+        return sample, gt, w, h, patientId
