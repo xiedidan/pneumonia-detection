@@ -109,6 +109,30 @@ def classificationCollate(batch):
 
     return images, gts, ws, hs, ids
 
+def verificationCollate(batch):
+    images = []
+    gts = []
+    ws = []
+    hs = []
+    ids = []
+
+    for i, sample in enumerate(batch):
+        image, gt, w, h, patientId = sample
+
+        images.append(image)
+
+        gt = torch.tensor(gt, dtype=torch.int)
+        gts.append(gt)
+
+        ws.append(w)
+        hs.append(h)
+        ids.append(patientId)
+
+    images = torch.stack(images, 0)
+    gts = torch.stack(gts, 0)
+
+    return images, gts, ws, hs, ids
+
 def get_class_name(classMapping, value):
     for i, item in enumerate(classMapping):
         if i == value:
@@ -382,7 +406,7 @@ class PneumoniaVerificationDataset(Dataset):
                 else:
                     bbox_count += len(bboxes)
 
-            bbox = self.bboxes[patient_index, bbox_index, :4]
+            bbox = self.bboxes[patient_index][bbox_index, :4]
             patientId = self.ids[patient_index]
 
             # read image
@@ -403,8 +427,7 @@ class PneumoniaVerificationDataset(Dataset):
             crop = transforms.functional.crop(image, y, x, h, w)
 
             # use gt to pass bbox (not in point form)
-            gt = self.bboxes[patient_index, bbox_index, :4]
-
+            gt = self.bboxes[patient_index][bbox_index, :4]
 
         if self.transform is not None:
             crop = self.transform(crop)

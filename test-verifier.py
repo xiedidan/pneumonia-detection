@@ -6,6 +6,7 @@ import os
 import pickle
 import argparse
 import itertools
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
@@ -34,7 +35,7 @@ pretrained = False
 # spawned workers on windows take too much gmem
 number_workers = 8
 if sys.platform == 'win32':
-    number_workers = 2
+    number_workers = 4
 
 size = 512
 mean = [0.49043187350911405]
@@ -82,7 +83,7 @@ testLoader = torch.utils.data.DataLoader(
     batch_size=flags.batch_size,
     shuffle=False,
     num_workers=number_workers,
-    collate_fn=classificationCollate,
+    collate_fn=verificationCollate,
 )
 
 # model
@@ -107,7 +108,7 @@ def test():
         targets = {}
 
         # perfrom forward
-        for batch_index, (samples, gts, ws, hs, ids) in enumerate(testLoader):
+        for (samples, gts, ws, hs, ids) in tqdm(testLoader):
             samples = samples.to(device)
             gts = gts.to(device=device, dtype=torch.long)
 
@@ -117,28 +118,29 @@ def test():
                 outputs = resnet(samples)
 
             # deal with results
-            confs = nn.functional.softmax(outputs.detach())
-            max_confs, results = torch.max(confs, dim=outputs.dim() - 1)
+            confs = nn.functional.softmax(outputs.detach(), dim=-1)
+            max_confs, results = torch.max(confs, dim=-1)
 
             # plot
             if flags.plot:
-                labels = ['f: {}, r: {}, s: {}'.format(ids[i], result, max_confs[i]) for i, result in enumerate(results)]
+                labels = ['{}\nr: {}, s: {:.2f}'.format(ids[i], result, max_confs[i]) for i, result in enumerate(results)]
                 plot_classification(samples.cpu(), labels, 2)
 
             mask = results.eq(2)
             scores = torch.masked_select(max_confs, mask)
-            target_ids = torch.masked_select(ids, mask)
+            # target_ids = torch.masked_select(ids, mask)
+            target_ids = list(itertools.compress(ids, mask))
 
-            mask = mask.expand(5, confs.size(0)).t()
-            bboxes = torch.masked_select(gts, mask).view(-1, 5)
+            mask = mask.expand(4, confs.size(0)).t()
+            bboxes = torch.masked_select(gts, mask).view(-1, 4)
 
             if bboxes.dim() == 0:
                 continue # go to next batch
 
-            rows = np.hstack(
+            rows = np.hstack((
                 bboxes.cpu().numpy(),
                 scores[:, np.newaxis]
-            ).astype(np.float32, copy=False)
+            )).astype(np.float32, copy=False)
 
             # TODO : filter out bbox with low score?
 
@@ -146,7 +148,7 @@ def test():
             all_target_ids = list(set(all_target_ids + target_ids)) # unique target ids
 
             for i, row in enumerate(rows):
-                if targets[target_ids[i]] is not None:
+                if target_ids[i] in targets.keys():
                     targets[target_ids[i]].append(row)
                 else:
                     targets[target_ids[i]] = [ row ]
