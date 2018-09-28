@@ -33,15 +33,19 @@ def export_detection_csv(file, ids, detections):
 
         file.write('{}\n'.format(line))
 
-def export_verification_csv(file, results):
+def export_verification_csv(file, results, score_threshold=0.5):
     for patientId in results.keys():
         line = '{},'.format(patientId)
 
         bboxes = results[patientId]
         bboxes = [to_point_form(bbox) for bbox in bboxes]
 
+        exist_flag = False
         for i, bbox in enumerate(bboxes):
-            if i == 0:
+            if bbox[4] < score_threshold:
+                continue
+
+            if not exist_flag:
                 line = '{}{} {} {} {} {}'.format(
                     line,
                     bbox[4],
@@ -50,6 +54,7 @@ def export_verification_csv(file, results):
                     int(bbox[2]),
                     int(bbox[3]),
                 )
+                exist_flag = True
             else:
                 line = '{} {} {} {} {} {}'.format(
                     line,

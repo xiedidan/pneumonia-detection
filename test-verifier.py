@@ -37,6 +37,7 @@ number_workers = 8
 if sys.platform == 'win32':
     number_workers = 4
 
+score_threshold = 0.7
 size = 512
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
@@ -142,8 +143,6 @@ def test():
                 scores[:, np.newaxis]
             )).astype(np.float32, copy=False)
 
-            # TODO : filter out bbox with low score?
-
             # collect results
             all_target_ids = list(set(all_target_ids + target_ids)) # unique target ids
 
@@ -162,7 +161,7 @@ def test():
                 if patientId not in all_target_ids:
                     targets[patientId] = []
 
-            export_verification_csv(csv, targets)
+            export_verification_csv(csv, targets, score_threshold)
 
 # ok, main loop
 if __name__ == '__main__':
