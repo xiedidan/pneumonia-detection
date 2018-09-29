@@ -82,6 +82,7 @@ parser.add_argument('--lr', default=1e-6, type=float, help='learning rate')
 parser.add_argument('--end_epoch', default=200, type=float, help='epcoh to stop training')
 parser.add_argument('--batch_size', default=4, type=int, help='batch size')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--transfer', action='store_true', help='transfer learning from pretrained base model')
 parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help='checkpoint file path')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
@@ -153,14 +154,14 @@ if flags.resume:
     curr_batch = checkpoint['batch']
 
     ssd_net.load_state_dict(checkpoint['net'])
-else:
+elif flags.transfer:
     print('Loading base network...')
     vgg_weights = torch.load(flags.checkpoint)
     ssd_net.vgg.load_state_dict(vgg_weights)
 
 net.to(device)
 
-if not flags.resume:
+if not (flags.resume or flags.transfer):
     print('Initializing weights...')
     # initialize newly added layers' weights with xavier method
     ssd_net.extras.apply(weights_init)
