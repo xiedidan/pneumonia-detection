@@ -99,8 +99,8 @@ class ResNet(nn.Module):
         self.inplanes = 64
         super(ResNet, self).__init__()
 
-        # input = 448
-        self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False) # output = 224
+        # input = 448 ~ 512
+        self.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, bias=False) # output = 224
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1) # output = 112
