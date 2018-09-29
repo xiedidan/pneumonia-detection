@@ -270,10 +270,7 @@ class PneumoniaDetectionDataset(Dataset):
 
     def _pick_sample(self, df, classMapping):
         # TODO : more complicated pick method?
-        # return df[df['classNo'] != classMapping['Normal']]
-
-        # now let SSD handle all images
-        return df
+        return df[df['classNo'] != classMapping['No Lung Opacity / Not Normal']]
 
 class PneumoniaVerificationDataset(Dataset):
     def __init__(self, root, classMapping, num_classes=3, crop_ratio=1.25, phase='train', transform=None, target_transform=None, detection_path='./detection.pth'):

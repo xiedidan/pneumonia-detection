@@ -37,7 +37,7 @@ number_workers = 8
 if sys.platform == 'win32':
     number_workers = 4
 
-score_threshold = 0.7
+score_threshold = 0.6
 size = 512
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
