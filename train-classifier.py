@@ -239,6 +239,7 @@ def val(epoch):
     with torch.no_grad():
         resnet.eval()
         val_loss = 0
+        val_accuracy = 0
         batch_count = len(valLoader)
 
         # perfrom forward
@@ -251,6 +252,15 @@ def val(epoch):
             else:
                 outputs = resnet(samples)
 
+            # accuracy
+            confs = nn.functional.softmax(outputs.detach())
+            max_confs, results = torch.max(confs, dim=-1)
+            results = torch.eq(gts.detach(), results)
+            accuracy = torch.mean(results.to(dtype=torch.float32)).item()
+
+            val_accuracy += accuracy
+
+            # loss
             if torch.cuda.device_count() > 1:
                 loss = nn.parallel.data_parallel(criterion, (outputs, gts))
                 loss = loss.sum()
@@ -259,13 +269,15 @@ def val(epoch):
 
             val_loss += loss.item()
 
-            print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}'.format(
+            print('e:{}/{}, b:{}/{}, b_l:{:.2f}, e_l:{:.2f}, b_a:{:.2f}, e_a:{:.2f}'.format(
                 epoch,
                 flags.end_epoch - 1,
                 batch_index,
                 batch_count - 1,
                 loss.item(),
-                val_loss / (batch_index + 1)
+                val_loss / (batch_index + 1),
+                accuracy,
+                val_accuracy / (batch_index + 1)
             ))
 
         global best_loss
