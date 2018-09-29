@@ -37,7 +37,7 @@ number_workers = 8
 if sys.platform == 'win32':
     number_workers = 4
 
-score_threshold = 0.7
+score_threshold = 0.95
 size = 512
 mean = [0.49043187350911405]
 std = [0.22854086980778032]
@@ -126,7 +126,9 @@ def test():
             # plot
             if flags.plot:
                 labels = ['{}\nr: {}, s: {:.2f}'.format(ids[i], result, max_confs[i]) for i, result in enumerate(results)]
-                plot_classification(samples.cpu(), labels, 2)
+                images = samples[:, 0].cpu().numpy()
+                images = images[:, np.newaxis, :, :]
+                plot_classification(torch.from_numpy(images), labels, 2)
 
             mask = results.eq(2)
             scores = torch.masked_select(max_confs, mask)
