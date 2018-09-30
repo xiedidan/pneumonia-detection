@@ -97,7 +97,8 @@ def classificationCollate(batch):
 
         images.append(image)
 
-        gt = torch.tensor(gt, dtype=torch.uint8)
+        # only for chexnet
+        # gt = torch.tensor(gt, dtype=torch.uint8)
         gts.append(gt)
 
         ws.append(w)
@@ -203,6 +204,11 @@ class PneumoniaClassificationDataset(Dataset):
 
         image_file = os.path.join(self.image_path, filename)
         image, w, h = load_dicom_image(image_file)
+
+        # for chexnet only
+        if self.phase == 'test':
+            image = image.convert('RGB')
+            gt = transforms.functional.to_tensor(image.convert('RGB'))
 
         if self.transform is not None:
             image = self.transform(image)
