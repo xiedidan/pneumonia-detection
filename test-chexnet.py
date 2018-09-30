@@ -137,7 +137,6 @@ def cam(images, model):
 
     class_weights = model.densenet121.classifier[0].weight[6, :]
     feature_maps = torch.matmul(features, class_weights)
-    print(feature_maps[0])
     
     return feature_maps
 
