@@ -24,6 +24,7 @@ from utils.export import *
 from utils.cam import *
 
 # constants & configs
+phase = 'val' # train or val, they have gt for eval
 
 # spawned workers on windows take too much gmem
 number_workers = 8
@@ -63,23 +64,23 @@ imagenet_mean = [0.485, 0.456, 0.406]
 imagenet_std = [0.229, 0.224, 0.225]
 imagenet_normalize = transforms.Normalize(imagenet_mean, imagenet_std)
 
-testTransform = transforms.Compose([
+evalTransform = transforms.Compose([
     transforms.Resize(size=256, interpolation=Image.BILINEAR),
     transforms.TenCrop(224),
     transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
     transforms.Lambda(lambda crops: torch.stack([imagenet_normalize(crop) for crop in crops]))
 ])
 
-testSet = PneumoniaClassificationDataset(
+evalSet = PneumoniaClassificationDataset(
     root=flags.root,
     classMapping=classMapping,
-    phase='test',
-    transform=testTransform,
+    phase=phase,
+    transform=evalTransform,
     num_classes=num_classes
 )
 
-testLoader = torch.utils.data.DataLoader(
-    testSet,
+evalLoader = torch.utils.data.DataLoader(
+    evalSet,
     batch_size=flags.batch_size,
     shuffle=False,
     num_workers=number_workers,
@@ -94,14 +95,14 @@ model.to(device)
 checkpoint = torch.load(flags.checkpoint)
 model.transfer(checkpoint['state_dict'])
 
-def test():
-    print('\nTest')
+def eval():
+    print('\nEval')
 
     with torch.no_grad():
         model.eval()
 
-        # perform forward
-        for (samples, gts, ws, hs, ids, origins) in tqdm(testLoader):
+        # perform forward - use gts for eval
+        for (samples, gts, ws, hs, ids, origins) in tqdm(evalLoader):
             batch_size, n_crops, c, h, w = samples.size()
             samples = samples.view(-1, c, h, w)
 
@@ -120,7 +121,9 @@ def test():
             origins = origins.to(device)
             cams = chexnet_cam(origins, model, PNEUMONIA_POSITION)
 
-            # TODO: get bboxes from cams
+            # TODO : get bboxes from cams
+
+            # TODO: measure metric
 
             labels = [CLASS_NAMES[result.item()] for result in results]
             labels = ['{}\n{}: {:.2f} / {:.2f}'.format(ids[i], label, max_confs[i], pneumonia_confs[i]) for i, label in enumerate(labels)]
@@ -129,4 +132,4 @@ def test():
                 plot_classification(torch.from_numpy(cams.cpu().numpy()[:, np.newaxis, :, :]), labels, 2)
 
 if __name__ == '__main__':
-    test()
+    eval()

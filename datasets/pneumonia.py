@@ -91,24 +91,26 @@ def classificationCollate(batch):
     ws = []
     hs = []
     ids = []
+    original_images = []
 
     for i, sample in enumerate(batch):
-        image, gt, w, h, patientId = sample
+        image, gt, w, h, patientId, original_image = sample
 
         images.append(image)
-
-        # only for chexnet
-        # gt = torch.tensor(gt, dtype=torch.uint8)
-        gts.append(gt)
+        gt = torch.tensor(gt, dtype=torch.uint8)
 
         ws.append(w)
         hs.append(h)
         ids.append(patientId)
 
+        # only for chexnet
+        original_images.append(original_image)
+
     images = torch.stack(images, 0)
     gts = torch.stack(gts, 0)
+    original_images = torch.stack(original_images, 0)
 
-    return images, gts, ws, hs, ids
+    return images, gts, ws, hs, ids, original_images
 
 def verificationCollate(batch):
     images = []
@@ -206,14 +208,13 @@ class PneumoniaClassificationDataset(Dataset):
         image, w, h = load_dicom_image(image_file)
 
         # for chexnet only
-        if self.phase == 'test':
-            image = image.convert('RGB')
-            gt = transforms.functional.to_tensor(image.convert('RGB'))
+        image = image.convert('RGB')
+        original_image = transforms.functional.to_tensor(image.convert('RGB'))
 
         if self.transform is not None:
             image = self.transform(image)
 
-        return image, gt, w, h, patientId
+        return image, gt, w, h, patientId, original_image
 
 class PneumoniaDetectionDataset(Dataset):
     def __init__(self, root, classMapping, num_classes=2, phase='train', transform=None, target_transform=None, classification_path=None):
