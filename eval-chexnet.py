@@ -121,9 +121,11 @@ def eval():
             origins = origins.to(device)
             cams = chexnet_cam(origins, model, PNEUMONIA_POSITION)
 
-            # TODO : get bboxes from cams
+            # get bboxes from cams
+            bboxes = export_bboxes(cams)
 
             # TODO: measure metric
+            
 
             labels = [CLASS_NAMES[result.item()] for result in results]
             labels = ['{}\n{}: {:.2f} / {:.2f}'.format(ids[i], label, max_confs[i], pneumonia_confs[i]) for i, label in enumerate(labels)]
