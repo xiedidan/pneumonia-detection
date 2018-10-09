@@ -41,7 +41,7 @@ def map_iou(boxes_true, boxes_pred, scores, thresholds = [0.4, 0.45, 0.5, 0.55, 
     if len(boxes_true) == 0 and len(boxes_pred) == 0:
         return None
     
-    assert boxes_true.shape[1] == 4 or boxes_pred.shape[1] == 4, "boxes should be 2D arrays with shape[1]=4"
+    # assert boxes_true.shape[1] == 4 or boxes_pred.shape[1] == 4, "boxes should be 2D arrays with shape[1]=4"
     if len(boxes_pred):
         assert len(scores) == len(boxes_pred), "boxes_pred and scores should be same length"
         # sort boxes_pred by scores in decreasing order

@@ -22,6 +22,7 @@ from datasets.pneumonia import *
 from utils.plot import *
 from utils.export import *
 from utils.cam import *
+from utils.metric import map_iou
 
 # constants & configs
 phase = 'val' # train or val, they have gt for eval
@@ -98,6 +99,8 @@ model.transfer(checkpoint['state_dict'])
 def eval():
     print('\nEval')
 
+    mean_aps = []
+
     with torch.no_grad():
         model.eval()
 
@@ -122,16 +125,35 @@ def eval():
             cams = chexnet_cam(origins, model, PNEUMONIA_POSITION)
 
             # get bboxes from cams
-            bboxes = export_bboxes(cams)
+            results = export_bboxes(cams, ws, hs)
 
-            # TODO: measure metric
-            
+            # measure metric
+            truths = [gt.cpu().numpy() for gt in gts]
 
-            labels = [CLASS_NAMES[result.item()] for result in results]
-            labels = ['{}\n{}: {:.2f} / {:.2f}'.format(ids[i], label, max_confs[i], pneumonia_confs[i]) for i, label in enumerate(labels)]
+            for truth, result in zip(truths, results):
+                bboxes, scores = result
+                print(bboxes)
+                print(scores)
+                print(truth)
+                mean_ap = map_iou(
+                    truth,
+                    bboxes,
+                    scores
+                )
+
+                if mean_ap is not None:
+                    mean_aps.append(mean_ap)
+
+            # labels = [CLASS_NAMES[result.item()] for result in results]
+            # labels = ['{}\n{}: {:.2f} / {:.2f}'.format(ids[i], label, max_confs[i], pneumonia_confs[i]) for i, label in enumerate(labels)]
 
             if flags.plot:
                 plot_classification(torch.from_numpy(cams.cpu().numpy()[:, np.newaxis, :, :]), labels, 2)
+
+        # final score
+        mean_aps = np.array(mean_aps)
+        mean_ap = mean_aps.mean()
+        print('mAP: {}'.format(mean_ap))
 
 if __name__ == '__main__':
     eval()

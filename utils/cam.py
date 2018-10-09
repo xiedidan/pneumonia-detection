@@ -17,13 +17,16 @@ import torch.nn.init as init
 import torchvision
 import torchvision.transforms as transforms
 from skimage import measure
+from skimage.transform import resize
 
 from densenet import *
 from datasets.pneumonia import *
 from utils.plot import *
 from utils.export import *
 
-FEATURE_THRESHOLD = 0.5
+import matplotlib.pyplot as plt
+
+FEATURE_THRESHOLD = 0.
 
 def chexnet_cam(images, model, position):
     feature_layers = model.densenet121.features
@@ -41,22 +44,35 @@ def chexnet_cam(images, model, position):
     
     return feature_maps
 
-def export_bboxes(cams):
+def export_bboxes(cams, ws, hs):
     results = []
 
-    for cam in cams:
+    for i, cam in enumerate(cams):
         bboxes = []
+        scores = []
 
-        pos = cam[:, :] > FEATURE_THRESHOLD
-        components = measure.label(pos)
+        clamp_cam = torch.clamp(cam, -1., 1.)
+
+        # resize cam to original size
+        w = ws[i]
+        h = hs[i]
+        
+        resized_pos = resize(clamp_cam.cpu().numpy(), (h, w), mode='reflect')
+        clipped_pos = resized_pos[:, :] > FEATURE_THRESHOLD
+
+        components = measure.label(clipped_pos)
 
         for region in measure.regionprops(components):
             ymin, xmin, ymax, xmax = region.bbox
 
             # return bbox in point-from (xmin, ymin, xmax, ymax)
-            bbox = (xmin, ymin, xmax - xmin, ymax - ymin)
+            bbox = [xmin, ymin, xmax - xmin, ymax - ymin]
             bboxes.append(bbox)
 
-    results.append(bboxes)
+            # conf
+            conf = np.mean(clipped_pos[ymin:ymax, xmin:xmax])
+            scores.append(conf)
+
+    results.append((np.array(bboxes), scores))
 
     return results

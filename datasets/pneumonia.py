@@ -33,24 +33,17 @@ def load_dicom_image(filename):
 
     return image, w, h
 
-'''
-def get_groundtruth(df, patientId, w, h):
+def get_chexnet_groundtruth(df, patientId, w, h):
     lines = df[df['patientId']==patientId]
 
     locs = []
-    confs = []
 
     for index, line in lines.iterrows():
-        if line['Target'] == 0:
-            # background label
-            locs.append([0., 0., w, h])
-            confs.append(0)
-        else:
+        if line['Target'] != 0:
+            # directly return [xmin, ymin, width, height]
             locs.append([line['x'], line['y'], line['width'], line['height']])
-            confs.append(1)
 
-    return np.array(locs), np.array(confs)
-'''
+    return np.array(locs)
 
 def get_groundtruth(df, patientId, w, h):
     lines = df[df['patientId']==patientId]
@@ -97,7 +90,9 @@ def classificationCollate(batch):
         image, gt, w, h, patientId, original_image = sample
 
         images.append(image)
-        gt = torch.tensor(gt, dtype=torch.uint8)
+
+        gt = torch.from_numpy(gt)
+        gts.append(gt)
 
         ws.append(w)
         hs.append(h)
@@ -107,7 +102,6 @@ def classificationCollate(batch):
         original_images.append(original_image)
 
     images = torch.stack(images, 0)
-    gts = torch.stack(gts, 0)
     original_images = torch.stack(original_images, 0)
 
     return images, gts, ws, hs, ids, original_images
@@ -141,6 +135,7 @@ def get_class_name(classMapping, value):
         if i == value:
             return item
 
+# classification dataset loads all kinds of samples - no matter with or w/o bboxes
 class PneumoniaClassificationDataset(Dataset):
     def __init__(self, root, classMapping, num_classes=3, phase='train', transform=None, target_transform=None):
         self.root = root
@@ -153,7 +148,7 @@ class PneumoniaClassificationDataset(Dataset):
         self.image_path = os.path.join(self.root, self.phase)
 
         if self.phase == 'train' or self.phase == 'val':
-            self.gt_path = os.path.join(self.root, 'stage_1_detailed_class_info.csv')
+            self.gt_path = os.path.join(self.root, 'stage_1_train_labels.csv')
 
             # load gt
             self.df = pd.read_csv(self.gt_path)
@@ -178,6 +173,7 @@ class PneumoniaClassificationDataset(Dataset):
         return self.total_len
 
     def __getitem__(self, index):
+        # load image
         if self.phase == 'train':
             classIndex = index // self.max_class_size
             className = get_class_name(self.classMapping, classIndex)
@@ -190,22 +186,18 @@ class PneumoniaClassificationDataset(Dataset):
             patientId = row['patientId']
 
             filename = '{}.dcm'.format(patientId)
-
-            gt = classIndex
         else: # val and test
             filename = self.image_files[index]
             patientId = filename.split('.')[0]
 
-            gt = 0 # dummy gt for test phase
-
-            if self.phase == 'val':
-                # query gt from df with patientId
-                rows = self.df[self.df['patientId'] == patientId]
-                row = rows.iloc[0]
-                gt = self.classMapping[row['class']]
-
         image_file = os.path.join(self.image_path, filename)
         image, w, h = load_dicom_image(image_file)
+
+        # load gt
+        if self.phase == 'train' or self.phase == 'val':
+            gt = get_chexnet_groundtruth(self.df, patientId, w, h)
+        else: # test
+            gt = np.array([]) # dummy gt for test phase
 
         # for chexnet only
         image = image.convert('RGB')
@@ -216,6 +208,7 @@ class PneumoniaClassificationDataset(Dataset):
 
         return image, gt, w, h, patientId, original_image
 
+# detection dataset loads samples with bboxes only
 class PneumoniaDetectionDataset(Dataset):
     def __init__(self, root, classMapping, num_classes=2, phase='train', transform=None, target_transform=None, classification_path=None):
         self.root = root
@@ -279,6 +272,7 @@ class PneumoniaDetectionDataset(Dataset):
         # TODO : more complicated pick method?
         return df[df['classNo'] != classMapping['No Lung Opacity / Not Normal']]
 
+# verification dataset loads only crops of bboxes
 class PneumoniaVerificationDataset(Dataset):
     def __init__(self, root, classMapping, num_classes=3, crop_ratio=1.25, phase='train', transform=None, target_transform=None, detection_path='./detection.pth'):
         self.root = root
