@@ -119,6 +119,14 @@ def eval():
             output_means = outputs.detach().view(batch_size, n_crops, -1).mean(dim=-2)
             max_confs, results = torch.max(output_means, dim=-1)
             pneumonia_confs = output_means[:, PNEUMONIA_POSITION]
+            pneumonia_preds = torch.gt(pneumonia_confs, 0.7).to(dtype=torch.long)
+
+            pneumonia_truths = torch.tensor([1 if len(item) > 0 else 0 for item in gts]).to(dtype=torch.long)
+            p_results = torch.eq(pneumonia_truths.cpu(), pneumonia_preds.cpu())
+
+            # print(pneumonia_preds)
+            # print(pneumonia_truths)
+            # print(pneumonia_preds.cpu() - pneumonia_truths.cpu())
 
             # get CAM - samples are ten-cropped, use original images instead
             origins = origins.to(device)
@@ -130,16 +138,24 @@ def eval():
             # measure metric
             truths = [gt.cpu().numpy() for gt in gts]
 
-            for truth, result in zip(truths, results):
+            for truth, result, pred in zip(truths, results, pneumonia_preds.cpu().numpy()):
                 bboxes, scores = result
-                print(bboxes)
-                print(scores)
-                print(truth)
-                mean_ap = map_iou(
-                    truth,
-                    bboxes,
-                    scores
-                )
+                # print(bboxes, truth)
+                if pred == 1:
+                    mean_ap = map_iou(
+                        truth,
+                        bboxes,
+                        scores
+                    )
+                else:
+                    mean_ap = map_iou(
+                        truth,
+                        [],
+                        []
+                    )
+
+                if mean_ap is not None and mean_ap > 0.:
+                    print('mAP: {}'.format(mean_ap))
 
                 if mean_ap is not None:
                     mean_aps.append(mean_ap)

@@ -201,7 +201,8 @@ class PneumoniaClassificationDataset(Dataset):
 
         # for chexnet only
         image = image.convert('RGB')
-        original_image = transforms.functional.to_tensor(image.convert('RGB'))
+        original_image = transforms.functional.resize(image, (256, 256))
+        original_image = transforms.functional.to_tensor(original_image)
 
         if self.transform is not None:
             image = self.transform(image)
