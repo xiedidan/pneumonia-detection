@@ -237,7 +237,8 @@ class PneumoniaDetectionDataset(Dataset):
             self.classification_path = classification_path
             self.df = pd.read_csv(self.classification_path)
 
-            self.df = self._pick_sample(self.df, self.classMapping)
+            # remove picker since we already have chexnet
+            # self.df = self._pick_sample(self.df, self.classMapping)
             self.total_len = len(self.df)
 
     def __len__(self):

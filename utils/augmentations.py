@@ -425,9 +425,9 @@ class SSDTransformation(object):
         self.augment = Compose([
             ConvertFromInts(),
             # ToAbsoluteCoords(),
-            ToPercentCoords(),
-            Resize(self.size),
-            SubtractMeans(self.mean)
+            ToPercentCoords()
+            # Resize(self.size),
+            # SubtractMeans(self.mean)
         ])
 
     def __call__(self, img, boxes, labels):
