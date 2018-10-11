@@ -96,10 +96,16 @@ model.to(device)
 checkpoint = torch.load(flags.checkpoint)
 model.transfer(checkpoint['state_dict'])
 
+# keys = model.state_dict().keys()
+# for key in keys:
+#    print(key)
+
 def eval():
     print('\nEval')
 
     mean_aps = []
+    # hit, false-positive, miss, false-negative, negative
+    ap_counts = [0, 0, 0, 0, 0]
 
     with torch.no_grad():
         model.eval()
@@ -119,7 +125,7 @@ def eval():
             output_means = outputs.detach().view(batch_size, n_crops, -1).mean(dim=-2)
             max_confs, results = torch.max(output_means, dim=-1)
             pneumonia_confs = output_means[:, PNEUMONIA_POSITION]
-            pneumonia_preds = torch.gt(pneumonia_confs, 0.7).to(dtype=torch.long)
+            pneumonia_preds = torch.gt(pneumonia_confs, 0.5).to(dtype=torch.long)
 
             pneumonia_truths = torch.tensor([1 if len(item) > 0 else 0 for item in gts]).to(dtype=torch.long)
             p_results = torch.eq(pneumonia_truths.cpu(), pneumonia_preds.cpu())
@@ -133,7 +139,7 @@ def eval():
             cams = chexnet_cam(origins, model, PNEUMONIA_POSITION)
 
             # get bboxes from cams
-            results = export_bboxes(cams, ws, hs)
+            results, resized_cams = export_bboxes(cams, ws, hs)
 
             # measure metric
             truths = [gt.cpu().numpy() for gt in gts]
@@ -154,8 +160,18 @@ def eval():
                         []
                     )
 
-                if mean_ap is not None and mean_ap > 0.:
+                if mean_ap is not None and mean_ap > 0.: # hit
+                    ap_counts[0] += 1
                     print('mAP: {}'.format(mean_ap))
+                elif mean_ap is not None:
+                    if len(truth) == 0: # false-positive
+                        ap_counts[1] += 1
+                    elif len(bboxes) == 0 or pred == 0: # false-negative
+                        ap_counts[3] += 1
+                    else: # miss
+                        ap_counts[2] += 1
+                else: # negative
+                    ap_counts[4] += 1
 
                 if mean_ap is not None:
                     mean_aps.append(mean_ap)
@@ -164,12 +180,29 @@ def eval():
             # labels = ['{}\n{}: {:.2f} / {:.2f}'.format(ids[i], label, max_confs[i], pneumonia_confs[i]) for i, label in enumerate(labels)]
 
             if flags.plot:
-                plot_classification(torch.from_numpy(cams.cpu().numpy()[:, np.newaxis, :, :]), labels, 2)
+                # conver gts to bbox form
+                for i, gt in enumerate(gts):
+                    bboxes = torch.tensor([to_bbox(p) for p in gt])
+                    gts[i] = bboxes
+                '''
+                for i, result in enumerate(results):
+                    bboxes, _ = result
+                    bboxes = torch.from_numpy(np.array([to_bbox(p) for p in bboxes]))
+                    gts[i] = bboxes
+                '''
+                plot_detection_batch(resized_cams.cpu(), gts, 2)
 
         # final score
         mean_aps = np.array(mean_aps)
         mean_ap = mean_aps.mean()
-        print('mAP: {}'.format(mean_ap))
+        print('mAP:\t{}\nhit:\t{}\nfp:\t{}\nmiss:\t{}\nfn:\t{}\nneg:\t{}'.format(
+            mean_ap,
+            ap_counts[0],
+            ap_counts[1],
+            ap_counts[2],
+            ap_counts[3],
+            ap_counts[4]
+        ))
 
 if __name__ == '__main__':
     eval()

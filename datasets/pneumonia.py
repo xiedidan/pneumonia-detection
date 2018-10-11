@@ -22,6 +22,10 @@ if sys.platform == 'linux':
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
 
+def to_bbox(p):
+    bbox = [p[0], p[1], p[0] + p[2], p[1] + p[3]]
+    return bbox
+
 def load_dicom_image(filename):
     ds = sitk.ReadImage(filename)
 
@@ -201,7 +205,7 @@ class PneumoniaClassificationDataset(Dataset):
 
         # for chexnet only
         image = image.convert('RGB')
-        original_image = transforms.functional.resize(image, (256, 256))
+        original_image = transforms.functional.resize(image, (512, 512))
         original_image = transforms.functional.to_tensor(original_image)
 
         if self.transform is not None:

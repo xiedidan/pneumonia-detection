@@ -14,8 +14,8 @@ def plot_detection_batch(images, gts, rows):
     else:
         cols = batch_size // rows
 
-    images = images.to(torch.uint8).numpy()
-
+    images = images.numpy()
+    
     plt.ion()
     f, axs = plt.subplots(rows, cols)
 
@@ -26,18 +26,28 @@ def plot_detection_batch(images, gts, rows):
                 image = images[idx]
             
                 # Tensor shape in [C, H, W]
-                c, h, w = image.shape
+                if image.ndim == 3:
+                    c, h, w = image.shape
+                else:
+                    h, w = image.shape
+
                 image_size = np.array([w, h, w, h])
 
-                image = np.transpose(image, (1, 2, 0))
-            
+                if image.ndim == 3:
+                    image = np.transpose(image, (1, 2, 0))
+                
                 axs[i][j].imshow(image.squeeze(), cmap='gray')
                 axs[i][j].set_xticks([])
                 axs[i][j].set_yticks([])
 
                 bboxes = gts[idx]
-                bboxes = bboxes[:, :4]
-                show_bboxes(axs[i][j], bboxes.numpy() * image_size)
+                if bboxes.dim() > 1 and bboxes.shape[1] == 5:
+                    bboxes = bboxes[:, :4]
+
+                if len(bboxes) > 0 and bboxes.shape[1] == 5: 
+                    show_bboxes(axs[i][j], bboxes.numpy() * image_size)
+                else:
+                    show_bboxes(axs[i][j], bboxes.numpy())
             
     plt.tight_layout()
     plt.ioff()

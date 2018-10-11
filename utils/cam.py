@@ -26,7 +26,7 @@ from utils.export import *
 
 import matplotlib.pyplot as plt
 
-FEATURE_THRESHOLD = 3.
+FEATURE_THRESHOLD = 0.5
 
 def chexnet_cam(images, model, position):
     feature_layers = model.densenet121.features
@@ -46,35 +46,34 @@ def chexnet_cam(images, model, position):
     class_weights = model.densenet121.classifier[0].weight[position, :]
     # feature_maps.shape = [batch_size, h, w, 1024] x [1024, 1] = [batch_size, h, w]
     feature_maps = torch.matmul(features, class_weights)
+
+    feature_maps = torch.sigmoid(feature_maps)
     
     return feature_maps
-
+    
 def export_bboxes(cams, ws, hs):
     results = []
+    resized_cams = []
 
     for i, cam in enumerate(cams):
         bboxes = []
         scores = []
 
-        # print('cam.max(): {}'.format(cam.max()))
-        # clamp_cam = torch.clamp(cam, -1., 1.)
-        pos = cam[:, :] > FEATURE_THRESHOLD
-
         # resize cam to original size
         w = ws[i]
         h = hs[i]
         
-        pil_pos = transforms.functional.to_pil_image(torch.unsqueeze(pos, 0).cpu())
+        pil_pos = transforms.functional.to_pil_image(torch.unsqueeze(cam, 0).cpu())
         resized_pos = transforms.functional.resize(pil_pos, (h, w))
         resized_pos = transforms.functional.to_tensor(resized_pos).squeeze().cpu().numpy()
 
+        binary_pos = resized_pos[:, :] > FEATURE_THRESHOLD
         # print(resized_pos.max())
-        clipped_pos = resized_pos[:, :] > 0.0039
 
-        # plt.imshow(resized_pos)
+        ##plt.imshow(resized_pos)
         # plt.show()
 
-        components = measure.label(clipped_pos)
+        components = measure.label(binary_pos)
 
         for region in measure.regionprops(components):
             ymin, xmin, ymax, xmax = region.bbox
@@ -84,10 +83,11 @@ def export_bboxes(cams, ws, hs):
             bboxes.append(bbox)
 
             # conf
-            conf = np.mean(clipped_pos[ymin:ymax, xmin:xmax])
+            conf = np.mean(resized_pos[ymin:ymax, xmin:xmax])
             scores.append(conf)
         
         # print(bboxes)
         results.append((np.array(bboxes), np.array(scores)))
+        resized_cams.append(resized_pos)
 
-    return results
+    return results, torch.tensor(resized_cams)
