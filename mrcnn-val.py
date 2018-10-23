@@ -34,13 +34,13 @@ def get_dicom_fps(dicom_dir):
 def parse_dataset(dicom_dir, anns): 
     image_fps = get_dicom_fps(dicom_dir)
 
-    # filter out non-target
+    # allow all images
     target_images = []
 
     for index, row in anns.iterrows():
         fp = os.path.join(dicom_dir, row['patientId'] + '.dcm')
 
-        if (row['Target'] == 1) and (fp not in target_images):
+        if fp not in target_images:
             target_images.append(fp)
 
     # create annotation list
@@ -56,15 +56,10 @@ def parse_dataset(dicom_dir, anns):
 
 # argparser
 parser = argparse.ArgumentParser(description='Pneumonia Mask RCNN Pipeline')
-parser.add_argument('--lr', default=0.004, type=float, help='learning rate')
-parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help='checkpoint file path')
 parser.add_argument('--lib', default='../', help='Mask RCNN library location')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root directory')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
-parser.add_argument('--epochs', default=200, type=int, help='stop epoch')
-parser.add_argument('--batch_size', default=16, type=int, help='batch size')
-parser.add_argument('--steps', default=200, type=int, help='steps(batch) in each epoch')
 parser.add_argument('--plot', action='store_true', help='plot images')
 flags = parser.parse_args()
 
@@ -93,23 +88,20 @@ class DetectorConfig(Config):
     # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
     # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
     GPU_COUNT = 2
-    IMAGES_PER_GPU = 8
+    IMAGES_PER_GPU = 256
     
     BACKBONE = 'resnet50'
     
     NUM_CLASSES = 2  # background + 1 pneumonia classes
     
-    IMAGE_MIN_DIM = 1024
-    IMAGE_MAX_DIM = 1024
+    IMAGE_MIN_DIM = 256
+    IMAGE_MAX_DIM = 256
     IMAGE_PADDING = False
-
     # RPN_ANCHOR_SCALES = (16, 32, 64, 128)
-    TRAIN_ROIS_PER_IMAGE = 128
-    MINI_MASK_SHAPE = (128, 128)  # (height, width) of the mini-mask
-    
+    TRAIN_ROIS_PER_IMAGE = 200
     MAX_GT_INSTANCES = 4
     DETECTION_MAX_INSTANCES = 3
-    DETECTION_MIN_CONFIDENCE = 0.78  ## match target distribution
+    DETECTION_MIN_CONFIDENCE = 0.95 # 0.78  ## match target distribution
     DETECTION_NMS_THRESHOLD = 0.01
 
 config = DetectorConfig()
@@ -179,9 +171,8 @@ class DetectorDataset(utils.Dataset):
 
         return mask.astype(np.bool), class_ids.astype(np.int32)
 
-# training dataset
+# eval dataset
 train_dicom_dir = os.path.join(flags.root, 'train')
-test_dicom_dir = os.path.join(flags.root, 'test')
 
 anns = pd.read_csv(os.path.join(flags.root, 'stage_1_train_labels.csv'))
 print(anns.head())
@@ -202,36 +193,6 @@ image_fps_train = image_fps_list[val_size:]
 print('Samples in train set: {}, val set: {}'.format(len(image_fps_train), len(image_fps_val)))
 # print(image_fps_val[:6])
 
-# Image augmentation (light but constant)
-augmentation = iaa.Sequential([
-    iaa.OneOf([ ## geometric transform
-        iaa.Affine(
-            scale={"x": (0.98, 1.02), "y": (0.98, 1.04)},
-            translate_percent={"x": (-0.02, 0.02), "y": (-0.04, 0.04)},
-            rotate=(-2, 2),
-            shear=(-1, 1),
-        ),
-        iaa.PiecewiseAffine(scale=(0.001, 0.025)),
-    ]),
-    iaa.OneOf([ ## brightness or contrast
-        iaa.Multiply((0.9, 1.1)),
-        iaa.ContrastNormalization((0.9, 1.1)),
-    ]),
-    iaa.OneOf([ ## blur or sharpen
-        iaa.GaussianBlur(sigma=(0.0, 0.1)),
-        iaa.Sharpen(alpha=(0.0, 0.1)),
-    ]),
-])
-
-# prepare the training dataset
-dataset_train = DetectorDataset(
-    image_fps_train,
-    image_annotations,
-    ORIG_SIZE,
-    ORIG_SIZE
-)
-dataset_train.prepare()
-
 # prepare the validation dataset
 dataset_val = DetectorDataset(
     image_fps_val,
@@ -247,75 +208,44 @@ model = modellib.MaskRCNN(
     device=device
 )
 model.to(device)
+model.load_weights(flags.checkpoint)
 
-if flags.resume:
-    model.load_weights(flags.checkpoint)
+# ok, eval
+aps = []
+ap_dist = {'hit': 0, 'fp': 0, 'fn': 0, 'miss': 0, 'neg': 0}
+image_ids = dataset_val.image_ids
 
-    model.train_model(
-        dataset_train,
+for image_id in tqdm(image_ids):
+    image, image_meta, gt_class_id, gt_bbox, gt_mask = modellib.load_image_gt(
         dataset_val,
-        learning_rate=flags.lr,
-        epochs=flags.epochs,
-        BatchSize=flags.batch_size,
-        steps=flags.steps,
-        layers='all',
-        augmentation=augmentation
-    )
-else:
-    coco_weights_path = os.path.join(flags.lib, 'mask_rcnn_coco.pth')
-    model.load_pre_weights(coco_weights_path)
-
-    # Train Mask-RCNN Model 
-    ## train heads with higher lr to speedup the learning
-    model.train_model(
-        dataset_train,
-        dataset_val,
-        learning_rate=flags.lr * 2,
-        epochs=2,
-        BatchSize=flags.batch_size,
-        steps=flags.steps,
-        layers='heads',
-        augmentation=None
-    )  ## no need to augment yet
-
-    model.train_model(
-        dataset_train,
-        dataset_val,
-        learning_rate=flags.lr,
-        epochs=6,
-        BatchSize=flags.batch_size,
-        steps=flags.steps,
-        layers='all',
-        augmentation=augmentation
-    )
-
-    model.train_model(
-        dataset_train,
-        dataset_val,
-        learning_rate=flags.lr / 5,
-        epochs=16,
-        BatchSize=flags.batch_size,
-        steps=flags.steps,
-        layers='all',
-        augmentation=augmentation
-    )
-
-'''
-# TODO : perform val for each epoch
-self.eval()
-
-epoch_aps = []
-image_ids = val_dataset.image_ids
-
-for image_id in image_ids:
-    image, image_meta, gt_class_id, gt_bbox, gt_mask = load_image_gt(
-        val_dataset,
-        self.config,
+        config,
         image_id
     )
 
-    results = self.detect([image])
-    r = results[0]
+    results = model.detect([image])
+    if results is None:
+        r = {'rois': [], 'class_ids': [], 'scores': [], 'masks': []}
+    else:
+        r = results[0]
+
+    if len(r['class_ids']) == 0:
+        # no pred bbox
+        if len(gt_class_id) == 1 and gt_class_id[0] == 0:
+            # also no gt bbox, no count, goto next image
+            ap_dist['neg'] += 1
+            continue
+        else:
+            # got gt bbox, false-negative, count a 0
+            ap_dist['fn'] += 1
+            aps.append(0.)
+            continue
+    else:
+        # got pred box
+        if len(gt_class_id) == 1 and gt_class_id[0] == 0:
+            # no gt bbox, false-positive, count a 0
+            ap_dist['fp'] += 1
+            aps.append(0.)
+            continue
 
     ap = utils.compute_ap_range(
         gt_bbox,
@@ -328,8 +258,18 @@ for image_id in image_ids:
         iou_thresholds=[0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75]
     )
 
-    epoch_aps.append(ap)
+    if ap > 0.:
+        ap_dist['hit'] += 1
+    else:
+        ap_dist['miss'] += 1
 
-self.aps.append(epoch_aps)
-print('===> Epoch {} Eval: mAP: {:.4f}'.format(epoch, np.mean(epoch_aps)))
-'''
+    aps.append(ap)
+
+print('mAP: {}'.format(np.mean(aps)))
+print('hit:\t{}\nmiss:\t{}\nfp:\t{}\nfn:\t{}\nneg:\t{}'.format(
+    ap_dist['hit'],
+    ap_dist['miss'],
+    ap_dist['fp'],
+    ap_dist['fn'],
+    ap_dist['neg']
+))
