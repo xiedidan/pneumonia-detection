@@ -5,9 +5,9 @@ import math
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+plt.switch_backend('tkagg')
 import json
 import pydicom
-from imgaug import augmenters as iaa
 from tqdm import tqdm
 import pandas as pd 
 import glob
@@ -53,6 +53,14 @@ def parse_dataset(dicom_dir, anns):
             image_annotations[fp].append(row)
 
     return target_images, image_annotations 
+
+# set color for class
+def get_colors_for_class_ids(class_ids):
+    colors = []
+    for class_id in class_ids:
+        if class_id == 1:
+            colors.append((.941, .204, .204))
+    return colors
 
 # argparser
 parser = argparse.ArgumentParser(description='Pneumonia Mask RCNN Pipeline')
@@ -214,6 +222,59 @@ model.load_weights(flags.checkpoint)
 aps = []
 ap_dist = {'hit': 0, 'fp': 0, 'fn': 0, 'miss': 0, 'neg': 0}
 image_ids = dataset_val.image_ids
+
+if flags.plot:
+    for image_id in image_ids:
+        # load original image w/o mini-mask
+        image, image_meta, gt_class_id, gt_bbox, gt_mask = modellib.load_image_gt(
+            dataset_val,
+            config,
+            image_id,
+            use_mini_mask=False
+        )
+
+        plt.ion()
+        fig = plt.figure(figsize=(10, 5))
+
+        plt.subplot(1, 2, 1)
+        visualize.display_instances(
+            image,
+            gt_bbox,
+            gt_mask,
+            gt_class_id,
+            dataset_val.class_names,
+            # colors=get_colors_for_class_ids(gt_class_id),
+            ax=fig.axes[-1]
+        )
+
+        plt.subplot(1, 2, 2)
+        results = model.detect([image]) #, verbose=1)
+        if results is None:
+            visualize.display_instances(
+                image,
+                np.array([]),
+                [],
+                [],
+                dataset_val.class_names,
+                # colors=get_colors_for_class_ids(gt_class_id),
+                ax=fig.axes[-1]
+            )
+        else:
+            r = results[0]
+
+            visualize.display_instances(
+                image,
+                r['rois'],
+                r['masks'],
+                r['class_ids'],
+                dataset_val.class_names,
+                r['scores'],
+                # colors=get_colors_for_class_ids(r['class_ids']),
+                ax=fig.axes[-1]
+            )
+        
+        plt.ioff()
+        plt.show()
 
 for image_id in tqdm(image_ids):
     image, image_meta, gt_class_id, gt_bbox, gt_mask = modellib.load_image_gt(
