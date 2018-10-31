@@ -10,24 +10,83 @@ from tqdm import tqdm
 # argparser
 parser = argparse.ArgumentParser(description='Pneumonia detection dataset split tool')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
-parser.add_argument('--ratio', default=0.1, help='val:train sample ratio')
+parser.add_argument('--val', type=int, default=1000, help='samples picked for val')
+parser.add_argument('--eval', type=int, default=0, help='samples picked for evaluation')
+parser.add_argument('--random', default=False, help='randomly pick')
 flags = parser.parse_args()
 
-def pick_val(root, ratio):
-    val_path = os.path.join(root, 'val/')
-    if not os.path.exists(val_path):
-        os.mkdir(val_path)
+def pick_randomly(root, src_path, dest_path, file_list, count):
+    # mk output dir
+    sample_path = os.path.join(root, dest_path)
+    if not os.path.exists(sample_path):
+        os.mkdir(sample_path)
 
-    train_path = os.path.join(root, 'train/')
-    train_list = os.listdir(train_path)
+    # pick randomly
+    sample_list = random.sample(file_list, count)
 
-    val_list = random.sample(train_list, int(len(train_list) * ratio))
+    # move
+    for filename in sample_list:
+        src_file = os.path.join(root, src_path, filename)
+        dest_file = os.path.join(root, dest_path, filename)
+        shutil.move(src_file, dest_file)
 
-    for filename in val_list:
-        src_path = os.path.join(train_path, filename)
-        dest_path = os.path.join(root, 'val/', filename)
-        
-        shutil.move(src_path, dest_path)
+    return sample_list
+
+def pick_last(root, src_path, dest_path, file_list, count):
+    # mk output dir
+    sample_path = os.path.join(root, dest_path)
+    if not os.path.exists(sample_path):
+        os.mkdir(sample_path)
+
+    # pick last
+    sample_list = file_list[:count]
+
+    # move
+    for filename in sample_list:
+        src_file = os.path.join(root, src_path, filename)
+        dest_file = os.path.join(root, dest_path, filename)
+        shutil.move(src_file, dest_file)
+
+    return sample_list
 
 if __name__ == '__main__':
-    pick_val(flags.root, flags.ratio)
+    # pick val first
+    train_path = os.path.join(flags.root, 'train/')
+    train_list = os.listdir(train_path)
+
+    if flags.random:
+        val_list = pick_randomly(
+            flags.root,
+            'train/',
+            'val/',
+            train_list,
+            flags.val
+        )
+    else:
+        val_list = pick_last(
+            flags.root,
+            'train/',
+            'val/',
+            train_list,
+            flags.val
+        )
+
+    # pick eval list
+    train_list = os.listdir(train_path)
+
+    if flags.random:
+        eval_list = pick_randomly(
+            flags.root,
+            'train/',
+            'eval/',
+            train_list,
+            flags.eval
+        )
+    else:
+        eval_list = pick_last(
+            flags.root,
+            'train/',
+            'eval/',
+            train_list,
+            flags.eval
+        )
