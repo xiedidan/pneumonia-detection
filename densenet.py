@@ -48,3 +48,5 @@ class DenseNet121(nn.Module):
         # load pretrained chexnet parameters (from old pytorch version)
         my_state_dict = convert_model(state_dict)
         self.load_state_dict(my_state_dict)
+
+        return self.parameters()
