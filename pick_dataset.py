@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser(description='Pneumonia detection dataset split 
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root path')
 parser.add_argument('--val', type=int, default=1000, help='samples picked for val')
 parser.add_argument('--eval', type=int, default=0, help='samples picked for evaluation')
-parser.add_argument('--random', default=False, help='randomly pick')
+parser.add_argument('--random', default=False, action='store_true', help='randomly pick')
 flags = parser.parse_args()
 
 def pick_randomly(root, src_path, dest_path, file_list, count):
