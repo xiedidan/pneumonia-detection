@@ -40,7 +40,7 @@ def parse_dataset(dicom_dir, anns):
     for index, row in anns.iterrows():
         fp = os.path.join(dicom_dir, row['patientId'] + '.dcm')
 
-        if fp not in target_images:
+        if (fp in image_fps) and (fp not in target_images):
             target_images.append(fp)
 
     # create annotation list
@@ -49,7 +49,7 @@ def parse_dataset(dicom_dir, anns):
     for index, row in anns.iterrows():
         fp = os.path.join(dicom_dir, row['patientId'] + '.dcm')
 
-        if row['Target'] == 1:
+        if (fp in image_fps) and (row['Target'] == 1):
             image_annotations[fp].append(row)
 
     return target_images, image_annotations 
@@ -106,6 +106,10 @@ class DetectorConfig(Config):
     IMAGE_MAX_DIM = 256
     IMAGE_PADDING = False
     # RPN_ANCHOR_SCALES = (16, 32, 64, 128)
+
+    USE_MINI_MASK = False
+    MINI_MASK_SHAPE = (128, 128)  # (height, width) of the mini-mask
+
     TRAIN_ROIS_PER_IMAGE = 200
     MAX_GT_INSTANCES = 4
     DETECTION_MAX_INSTANCES = 3
@@ -180,25 +184,19 @@ class DetectorDataset(utils.Dataset):
         return mask.astype(np.bool), class_ids.astype(np.int32)
 
 # eval dataset
-train_dicom_dir = os.path.join(flags.root, 'train')
-
+val_dicom_dir = os.path.join(flags.root, 'val')
 anns = pd.read_csv(os.path.join(flags.root, 'stage_1_train_labels.csv'))
 print(anns.head())
 
-image_fps, image_annotations = parse_dataset(train_dicom_dir, anns=anns)
+image_fps, image_annotations = parse_dataset(val_dicom_dir, anns=anns)
 
 # Original DICOM image size: 1024 x 1024
 ORIG_SIZE = 1024
 
-# pick 5% samples for val
 image_fps_list = list(image_fps)
-random.seed(42)
-random.shuffle(image_fps_list)
-val_size = int(len(image_fps_list) * 0.05)
-image_fps_val = image_fps_list[:val_size]
-image_fps_train = image_fps_list[val_size:]
+image_fps_val = image_fps_list
 
-print('Samples in train set: {}, val set: {}'.format(len(image_fps_train), len(image_fps_val)))
+print('Samples in val set: {}'.format(len(image_fps_val)))
 # print(image_fps_val[:6])
 
 # prepare the validation dataset

@@ -31,7 +31,7 @@ def get_dicom_fps(dicom_dir):
 
     return list(set(dicom_fps))
 
-def parse_dataset(dicom_dir, anns): 
+def parse_dataset(dicom_dir, anns, only_target=True): 
     image_fps = get_dicom_fps(dicom_dir)
 
     # filter out non-target
@@ -40,7 +40,10 @@ def parse_dataset(dicom_dir, anns):
     for index, row in anns.iterrows():
         fp = os.path.join(dicom_dir, row['patientId'] + '.dcm')
 
-        if (row['Target'] == 1) and (fp not in target_images):
+        if only_target:
+            if (row['Target'] == 1) and (fp in image_fps) and (fp not in target_images):
+                target_images.append(fp)
+        elif (fp in image_fps) and (fp not in target_images):
             target_images.append(fp)
 
     # create annotation list
@@ -49,8 +52,9 @@ def parse_dataset(dicom_dir, anns):
     for index, row in anns.iterrows():
         fp = os.path.join(dicom_dir, row['patientId'] + '.dcm')
 
-        if row['Target'] == 1:
-            image_annotations[fp].append(row)
+        if fp in image_fps:
+            if row['Target'] == 1:
+                image_annotations[fp].append(row)
 
     return target_images, image_annotations 
 
@@ -99,17 +103,19 @@ class DetectorConfig(Config):
     
     NUM_CLASSES = 2  # background + 1 pneumonia classes
     
-    IMAGE_MIN_DIM = 1024
-    IMAGE_MAX_DIM = 1024
+    IMAGE_MIN_DIM = 512
+    IMAGE_MAX_DIM = 512
     IMAGE_PADDING = False
 
     # RPN_ANCHOR_SCALES = (16, 32, 64, 128)
     TRAIN_ROIS_PER_IMAGE = 128
-    MINI_MASK_SHAPE = (128, 128)  # (height, width) of the mini-mask
+
+    USE_MINI_MASK = False
+    MINI_MASK_SHAPE = (256, 256)  # (height, width) of the mini-mask
     
-    MAX_GT_INSTANCES = 4
-    DETECTION_MAX_INSTANCES = 3
-    DETECTION_MIN_CONFIDENCE = 0.78  ## match target distribution
+    MAX_GT_INSTANCES = 5
+    DETECTION_MAX_INSTANCES = 4
+    DETECTION_MIN_CONFIDENCE = 0.95  ## match target distribution
     DETECTION_NMS_THRESHOLD = 0.01
 
 config = DetectorConfig()
@@ -181,23 +187,23 @@ class DetectorDataset(utils.Dataset):
 
 # training dataset
 train_dicom_dir = os.path.join(flags.root, 'train')
-test_dicom_dir = os.path.join(flags.root, 'test')
-
+val_dicom_dir = os.path.join(flags.root, 'val')
 anns = pd.read_csv(os.path.join(flags.root, 'stage_1_train_labels.csv'))
+
 print(anns.head())
 
-image_fps, image_annotations = parse_dataset(train_dicom_dir, anns=anns)
+train_image_fps, train_image_annotations = parse_dataset(train_dicom_dir, anns=anns, only_target=True)
+val_image_fps, val_image_annotations = parse_dataset(val_dicom_dir, anns=anns, only_target=False)
 
 # Original DICOM image size: 1024 x 1024
 ORIG_SIZE = 1024
 
-# pick 5% samples for val
-image_fps_list = list(image_fps)
-random.seed(42)
-random.shuffle(image_fps_list)
-val_size = int(len(image_fps_list) * 0.05)
-image_fps_val = image_fps_list[:val_size]
-image_fps_train = image_fps_list[val_size:]
+image_fps_train = list(train_image_fps)
+image_fps_val = list(val_image_fps)
+
+image_annotations = {}
+image_annotations.update(train_image_annotations)
+image_annotations.update(val_image_annotations)
 
 print('Samples in train set: {}, val set: {}'.format(len(image_fps_train), len(image_fps_val)))
 # print(image_fps_val[:6])
@@ -299,37 +305,3 @@ else:
         layers='all',
         augmentation=augmentation
     )
-
-'''
-# TODO : perform val for each epoch
-self.eval()
-
-epoch_aps = []
-image_ids = val_dataset.image_ids
-
-for image_id in image_ids:
-    image, image_meta, gt_class_id, gt_bbox, gt_mask = load_image_gt(
-        val_dataset,
-        self.config,
-        image_id
-    )
-
-    results = self.detect([image])
-    r = results[0]
-
-    ap = utils.compute_ap_range(
-        gt_bbox,
-        gt_class_id,
-        gt_mask,
-        r['rois'],
-        r['class_ids'],
-        r['scores'],
-        r['masks'],
-        iou_thresholds=[0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75]
-    )
-
-    epoch_aps.append(ap)
-
-self.aps.append(epoch_aps)
-print('===> Epoch {} Eval: mAP: {:.4f}'.format(epoch, np.mean(epoch_aps)))
-'''
