@@ -299,7 +299,7 @@ else:
         dataset_train,
         dataset_val,
         learning_rate=flags.lr / 5,
-        epochs=16,
+        epochs=flags.epochs,
         BatchSize=flags.batch_size,
         steps=flags.steps,
         layers='all',

@@ -5,7 +5,10 @@ import math
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-plt.switch_backend('tkagg')
+if "DISPLAY" not in os.environ:
+    plt.switch_backend('agg')
+else:
+    plt.switch_backend('tkagg')
 import json
 import pydicom
 from tqdm import tqdm
@@ -95,25 +98,26 @@ class DetectorConfig(Config):
     
     # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
     # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
-    GPU_COUNT = 2
-    IMAGES_PER_GPU = 256
+    GPU_COUNT = 1
+    IMAGES_PER_GPU = 8
     
     BACKBONE = 'resnet50'
     
     NUM_CLASSES = 2  # background + 1 pneumonia classes
     
-    IMAGE_MIN_DIM = 256
-    IMAGE_MAX_DIM = 256
+    IMAGE_MIN_DIM = 512
+    IMAGE_MAX_DIM = 512
     IMAGE_PADDING = False
+
     # RPN_ANCHOR_SCALES = (16, 32, 64, 128)
 
     USE_MINI_MASK = False
-    MINI_MASK_SHAPE = (128, 128)  # (height, width) of the mini-mask
+    MINI_MASK_SHAPE = (256, 256)  # (height, width) of the mini-mask
 
     TRAIN_ROIS_PER_IMAGE = 200
-    MAX_GT_INSTANCES = 4
-    DETECTION_MAX_INSTANCES = 3
-    DETECTION_MIN_CONFIDENCE = 0.95 # 0.78  ## match target distribution
+    MAX_GT_INSTANCES = 5
+    DETECTION_MAX_INSTANCES = 4
+    DETECTION_MIN_CONFIDENCE = 0.99 # 0.78  ## match target distribution
     DETECTION_NMS_THRESHOLD = 0.01
 
 config = DetectorConfig()
@@ -184,7 +188,7 @@ class DetectorDataset(utils.Dataset):
         return mask.astype(np.bool), class_ids.astype(np.int32)
 
 # eval dataset
-val_dicom_dir = os.path.join(flags.root, 'val')
+val_dicom_dir = os.path.join(flags.root, 'eval')
 anns = pd.read_csv(os.path.join(flags.root, 'stage_1_train_labels.csv'))
 print(anns.head())
 
@@ -196,7 +200,7 @@ ORIG_SIZE = 1024
 image_fps_list = list(image_fps)
 image_fps_val = image_fps_list
 
-print('Samples in val set: {}'.format(len(image_fps_val)))
+print('Samples in eval set: {}'.format(len(image_fps_val)))
 # print(image_fps_val[:6])
 
 # prepare the validation dataset
@@ -220,6 +224,8 @@ model.load_weights(flags.checkpoint)
 aps = []
 ap_dist = {'hit': 0, 'fp': 0, 'fn': 0, 'miss': 0, 'neg': 0}
 image_ids = dataset_val.image_ids
+
+model.eval()
 
 if flags.plot:
     for image_id in image_ids:
@@ -324,6 +330,7 @@ for image_id in tqdm(image_ids):
 
     aps.append(ap)
 
+print(len(aps))
 print('mAP: {}'.format(np.mean(aps)))
 print('hit:\t{}\nmiss:\t{}\nfp:\t{}\nfn:\t{}\nneg:\t{}'.format(
     ap_dist['hit'],
