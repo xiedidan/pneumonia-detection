@@ -117,7 +117,7 @@ class DetectorConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 200
     MAX_GT_INSTANCES = 5
     DETECTION_MAX_INSTANCES = 4
-    DETECTION_MIN_CONFIDENCE = 0.99 # 0.78  ## match target distribution
+    DETECTION_MIN_CONFIDENCE = 0.95 # 0.78  ## match target distribution
     DETECTION_NMS_THRESHOLD = 0.01
 
 config = DetectorConfig()
