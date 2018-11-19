@@ -11,6 +11,7 @@ else:
     plt.switch_backend('tkagg')
 import json
 import pydicom
+from PIL import Image
 from tqdm import tqdm
 import pandas as pd 
 import glob
@@ -68,7 +69,9 @@ def get_colors_for_class_ids(class_ids):
 # argparser
 parser = argparse.ArgumentParser(description='Pneumonia Mask RCNN Pipeline')
 parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help='checkpoint file path')
+parser.add_argument('--verifier_checkpoint', default='.verifier/checkpoint/checkpoint.pth', help='verifier checkpoint file path')
 parser.add_argument('--lib', default='../', help='Mask RCNN library location')
+parser.add_argument('--verifier_lib', default='../', help='verifier library location')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root directory')
 parser.add_argument('--device', default='cuda:0', help='device (cuda / cpu)')
 parser.add_argument('--plot', action='store_true', help='plot images')
@@ -117,7 +120,7 @@ class DetectorConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 200
     MAX_GT_INSTANCES = 5
     DETECTION_MAX_INSTANCES = 4
-    DETECTION_MIN_CONFIDENCE = 0.95 # 0.78  ## match target distribution
+    DETECTION_MIN_CONFIDENCE = 0.78 # 0.78  ## match target distribution
     DETECTION_NMS_THRESHOLD = 0.01
 
 config = DetectorConfig()
@@ -220,12 +223,88 @@ model = modellib.MaskRCNN(
 model.to(device)
 model.load_weights(flags.checkpoint)
 
+# load verifier
+VERIFIER_NUM_CLASSES = 4
+POSITIVE_CLASS_NO = 3
+
+sys.path.append(flags.verifier_lib)
+from datasets import rsna
+import densenet as dn
+
+verifier = dn.DenseNet121(VERIFIER_NUM_CLASSES)
+verifier.to(device)
+
+verifier_checkpoint = torch.load(flags.verifier_checkpoint)
+verifier.load_state_dict(verifier_checkpoint['net'])
+
+transformation = transforms.Resize(
+    size=512,
+    interpolation=Image.NEAREST
+)
+
+def verify(verifier, device, transform, image_id, bboxes):
+    image_path = dataset_val.image_info[image_id]['path']
+    image, w, h = rsna.load_dicom_image(image_path)
+
+    # image transforms
+    if transform is not None:
+        new_image = transform(image)
+        new_w, new_h = new_image.size # Image.size returns (w, h)
+    else:
+        new_image = image
+        new_w = w
+        new_h = h
+    
+    bbox_mask = []
+
+    for bbox in bboxes:
+        # bbox is a_cn
+        a_cn = bbox
+        a_pt = rsna.to_point(a_cn)
+
+        # create mask
+        mask = np.zeros((new_h, new_w, 1), dtype=np.uint8)
+        mask[a_pt[1]:a_pt[3], a_pt[0]:a_pt[2], :] = 255
+
+        # crop and resize
+        crop = transforms.functional.resized_crop(
+            new_image,
+            a_cn[1],
+            a_cn[0],
+            a_cn[3],
+            a_cn[2],
+            (new_h, new_w)
+        )
+
+        image_layer = transforms.functional.to_tensor(new_image)
+        mask = transforms.functional.to_tensor(mask)
+        crop = transforms.functional.to_tensor(crop)
+
+        layers = torch.cat((image_layer, mask, crop), dim=0)
+        layers = torch.unsqueeze(layers, dim=0) # shape = [1, 3, h, w]
+        layers = layers.to(device=device)
+
+        outputs = verifier(layers)
+
+        results = F.softmax(outputs, dim=-1) # shape = [1, 4]
+        results = torch.argmax(results, dim=-1) # shape = [1]
+        results = torch.squeeze(results)
+        print(results)
+
+        if results.cpu().item() == POSITIVE_CLASS_NO:
+            bbox_mask.append(1)
+        else:
+            bbox_mask.append(0)
+
+    return torch.tensor(bbox_mask).byte().to(device=device)
+
 # ok, eval
 aps = []
 ap_dist = {'hit': 0, 'fp': 0, 'fn': 0, 'miss': 0, 'neg': 0}
 image_ids = dataset_val.image_ids
 
 model.eval()
+verifier.eval()
 
 if flags.plot:
     for image_id in image_ids:
@@ -292,6 +371,24 @@ for image_id in tqdm(image_ids):
         r = {'rois': [], 'class_ids': [], 'scores': [], 'masks': []}
     else:
         r = results[0]
+
+        # filter results with verifier
+        mask = verify(verifier, device, transformation, image_id, r['rois'])
+
+        if (mask > 0).any():
+            print(r['rois'], r['masks'].shape)
+
+            r['rois'] = np.stack(list(itertools.compress(r['rois'], mask)))
+            r['class_ids'] = np.stack(list(itertools.compress(r['class_ids'], mask)))
+            r['scores'] = np.stack(list(itertools.compress(r['scores'], mask)))
+
+            masks = r['masks'].transpose((2, 0, 1))
+            masks = np.stack(list(itertools.compress(masks, mask)))
+            r['masks'] = masks.transpose((1, 2, 0))
+
+            print(r['rois'], r['masks'].shape)
+        else:
+            r = {'rois': [], 'class_ids': [], 'scores': [], 'masks': []}
 
     if len(r['class_ids']) == 0:
         # no pred bbox
