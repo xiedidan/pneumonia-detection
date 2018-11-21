@@ -120,7 +120,7 @@ class DetectorConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 200
     MAX_GT_INSTANCES = 5
     DETECTION_MAX_INSTANCES = 4
-    DETECTION_MIN_CONFIDENCE = 0.78 # 0.78  ## match target distribution
+    DETECTION_MIN_CONFIDENCE = 0.95 # 0.78  ## match target distribution
     DETECTION_NMS_THRESHOLD = 0.01
 
 config = DetectorConfig()
@@ -225,11 +225,13 @@ model.load_weights(flags.checkpoint)
 
 # load verifier
 VERIFIER_NUM_CLASSES = 4
-POSITIVE_CLASS_NO = 3
+POSITIVE_CLASS_THRESHOLD = 0
+CROP_BG_RATIO = 0.2
 
 sys.path.append(flags.verifier_lib)
 from datasets import rsna
 import densenet as dn
+from score import ScoreCounter
 
 verifier = dn.DenseNet121(VERIFIER_NUM_CLASSES)
 verifier.to(device)
@@ -237,12 +239,17 @@ verifier.to(device)
 verifier_checkpoint = torch.load(flags.verifier_checkpoint)
 verifier.load_state_dict(verifier_checkpoint['net'])
 
+score = ScoreCounter()
+score.add_scores(torch.from_numpy(verifier_checkpoint['scores']))
+avg_score = float(score.get_avg_score())
+print('Verifier scores loaded, avg: {}'.format(avg_score))
+
 transformation = transforms.Resize(
     size=512,
     interpolation=Image.NEAREST
 )
 
-def verify(verifier, device, transform, image_id, bboxes):
+def verify(verifier, device, transform, image_id, bboxes, score_threshold):
     image_path = dataset_val.image_info[image_id]['path']
     image, w, h = rsna.load_dicom_image(image_path)
 
@@ -262,9 +269,21 @@ def verify(verifier, device, transform, image_id, bboxes):
         a_cn = bbox
         a_pt = rsna.to_point(a_cn)
 
+        '''
         # create mask
         mask = np.zeros((new_h, new_w, 1), dtype=np.uint8)
         mask[a_pt[1]:a_pt[3], a_pt[0]:a_pt[2], :] = 255
+        '''
+
+        # use 'mask' layer as 120% crop
+        mask = transforms.functional.resized_crop(
+            new_image,
+            a_cn[1] * (1 - CROP_BG_RATIO / 2),
+            a_cn[0] * (1 - CROP_BG_RATIO / 2),
+            a_cn[3] * (1 + CROP_BG_RATIO),
+            a_cn[2] * (1 + CROP_BG_RATIO),
+            (new_h, new_w)
+        )
 
         # crop and resize
         crop = transforms.functional.resized_crop(
@@ -284,14 +303,10 @@ def verify(verifier, device, transform, image_id, bboxes):
         layers = torch.unsqueeze(layers, dim=0) # shape = [1, 3, h, w]
         layers = layers.to(device=device)
 
-        outputs = verifier(layers)
+        (class_outputs, score_outputs) = verifier(layers)
+        output_score_results = torch.gt(score_outputs.squeeze(), score_threshold)
 
-        results = F.softmax(outputs, dim=-1) # shape = [1, 4]
-        results = torch.argmax(results, dim=-1) # shape = [1]
-        results = torch.squeeze(results)
-        print(results)
-
-        if results.cpu().item() == POSITIVE_CLASS_NO:
+        if output_score_results.cpu().item() > 0:
             bbox_mask.append(1)
         else:
             bbox_mask.append(0)
@@ -365,6 +380,7 @@ for image_id in tqdm(image_ids):
         config,
         image_id
     )
+    molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
 
     results = model.detect([image])
     if results is None:
@@ -373,11 +389,9 @@ for image_id in tqdm(image_ids):
         r = results[0]
 
         # filter results with verifier
-        mask = verify(verifier, device, transformation, image_id, r['rois'])
+        mask = verify(verifier, device, transformation, image_id, r['rois'], 0.05)
 
         if (mask > 0).any():
-            print(r['rois'], r['masks'].shape)
-
             r['rois'] = np.stack(list(itertools.compress(r['rois'], mask)))
             r['class_ids'] = np.stack(list(itertools.compress(r['class_ids'], mask)))
             r['scores'] = np.stack(list(itertools.compress(r['scores'], mask)))
@@ -385,8 +399,6 @@ for image_id in tqdm(image_ids):
             masks = r['masks'].transpose((2, 0, 1))
             masks = np.stack(list(itertools.compress(masks, mask)))
             r['masks'] = masks.transpose((1, 2, 0))
-
-            print(r['rois'], r['masks'].shape)
         else:
             r = {'rois': [], 'class_ids': [], 'scores': [], 'masks': []}
 
