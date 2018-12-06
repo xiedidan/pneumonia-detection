@@ -104,12 +104,12 @@ class DetectorConfig(Config):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 8
     
-    BACKBONE = 'resnet50'
+    BACKBONE = 'resnet101'
     
     NUM_CLASSES = 2  # background + 1 pneumonia classes
     
-    IMAGE_MIN_DIM = 512
-    IMAGE_MAX_DIM = 512
+    IMAGE_MIN_DIM = 256
+    IMAGE_MAX_DIM = 256
     IMAGE_PADDING = False
 
     # RPN_ANCHOR_SCALES = (16, 32, 64, 128)
@@ -117,11 +117,12 @@ class DetectorConfig(Config):
     USE_MINI_MASK = False
     MINI_MASK_SHAPE = (256, 256)  # (height, width) of the mini-mask
 
-    TRAIN_ROIS_PER_IMAGE = 200
+    TRAIN_ROIS_PER_IMAGE = 16
     MAX_GT_INSTANCES = 5
     DETECTION_MAX_INSTANCES = 4
-    DETECTION_MIN_CONFIDENCE = 0.95 # 0.78  ## match target distribution
-    DETECTION_NMS_THRESHOLD = 0.01
+    DETECTION_MIN_CONFIDENCE = 0.78 # 0.78  ## match target distribution
+    DETECTION_NMS_THRESHOLD = 0.3
+    RPN_NMS_THRESHOLD  = 0.9
 
 config = DetectorConfig()
 config.display()
@@ -387,7 +388,8 @@ for image_id in tqdm(image_ids):
         r = {'rois': [], 'class_ids': [], 'scores': [], 'masks': []}
     else:
         r = results[0]
-
+        
+        '''
         # filter results with verifier
         mask = verify(verifier, device, transformation, image_id, r['rois'], 0.05)
 
@@ -401,6 +403,7 @@ for image_id in tqdm(image_ids):
             r['masks'] = masks.transpose((1, 2, 0))
         else:
             r = {'rois': [], 'class_ids': [], 'scores': [], 'masks': []}
+        '''
 
     if len(r['class_ids']) == 0:
         # no pred bbox

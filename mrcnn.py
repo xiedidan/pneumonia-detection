@@ -62,6 +62,7 @@ def parse_dataset(dicom_dir, anns, only_target=True):
 parser = argparse.ArgumentParser(description='Pneumonia Mask RCNN Pipeline')
 parser.add_argument('--lr', default=0.004, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--transfer', action='store_true', help='transfer learning from COCO pre-weights')
 parser.add_argument('--checkpoint', default='./checkpoint/checkpoint.pth', help='checkpoint file path')
 parser.add_argument('--lib', default='../', help='Mask RCNN library location')
 parser.add_argument('--root', default='./rsna-pneumonia-detection-challenge/', help='dataset root directory')
@@ -96,27 +97,30 @@ class DetectorConfig(Config):
     
     # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
     # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
-    GPU_COUNT = 2
+    GPU_COUNT = 1
     IMAGES_PER_GPU = 8
     
-    BACKBONE = 'resnet50'
+    BACKBONE = 'resnet101'
     
     NUM_CLASSES = 2  # background + 1 pneumonia classes
     
-    IMAGE_MIN_DIM = 512
-    IMAGE_MAX_DIM = 512
+    IMAGE_MIN_DIM = 256
+    IMAGE_MAX_DIM = 256
     IMAGE_PADDING = False
 
-    # RPN_ANCHOR_SCALES = (16, 32, 64, 128)
-    TRAIN_ROIS_PER_IMAGE = 128
+    RPN_NMS_THRESHOLD  = 0.9
+    BACKBONE_STRIDES = [4, 8, 16, 32, 64]
+    RPN_ANCHOR_SCALES = (32, 64, 128, 256, 512)
+    RPN_ANCHOR_RATIOS = [0.25, 0.33, 0.5, 1, 2, 3, 4]
+    TRAIN_ROIS_PER_IMAGE = 16
 
     USE_MINI_MASK = False
-    MINI_MASK_SHAPE = (256, 256)  # (height, width) of the mini-mask
+    # MINI_MASK_SHAPE = (256, 256)  # (height, width) of the mini-mask
     
     MAX_GT_INSTANCES = 5
     DETECTION_MAX_INSTANCES = 4
-    DETECTION_MIN_CONFIDENCE = 0.95  ## match target distribution
-    DETECTION_NMS_THRESHOLD = 0.01
+    DETECTION_MIN_CONFIDENCE = 0.78  ## match target distribution
+    DETECTION_NMS_THRESHOLD = 0.3
 
 config = DetectorConfig()
 config.display()
@@ -268,8 +272,11 @@ if flags.resume:
         augmentation=augmentation
     )
 else:
-    coco_weights_path = os.path.join(flags.lib, 'mask_rcnn_coco.pth')
-    model.load_pre_weights(coco_weights_path)
+    if flags.transfer:
+        coco_weights_path = os.path.join(flags.lib, 'mask_rcnn_coco.pth')
+        model.load_pre_weights(coco_weights_path)
+    else:
+        model.load_pre_weights('./checkpoint.pth') # a quick fix for log path problem
 
     # Train Mask-RCNN Model 
     ## train heads with higher lr to speedup the learning

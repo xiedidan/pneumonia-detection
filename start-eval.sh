@@ -1,0 +1,2 @@
+CUDA_VISIBLE_DEVICES=0 python mrcnn-eval.py --lib /home/voyager/project/Mask_RCNN_Pytorch/ --verifier_lib /home/voyager/project/roi-net/ --root /home/voyager/data/kaggle/rsna-pneumonia-detection-challenge/ --checkpoint /home/voyager/project/Mask_RCNN_Pytorch/pneumonia20181121T1738/mask_rcnn_pneumonia_0137.pth --verifier_checkpoint /home/voyager/project/roi-net/checkpoint/epoch_00017_loss_1.27813_score_0.22728.pth
+

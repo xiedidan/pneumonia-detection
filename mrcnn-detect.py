@@ -63,22 +63,25 @@ class DetectorConfig(Config):
     
     # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
     # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
-    GPU_COUNT = 2
-    IMAGES_PER_GPU = 256
+    GPU_COUNT = 1
+    IMAGES_PER_GPU = 8
     
-    BACKBONE = 'resnet50'
+    BACKBONE = 'resnet101'
     
     NUM_CLASSES = 2  # background + 1 pneumonia classes
     
-    IMAGE_MIN_DIM = 256
-    IMAGE_MAX_DIM = 256
+    IMAGE_MIN_DIM = 512
+    IMAGE_MAX_DIM = 512
     IMAGE_PADDING = False
-    # RPN_ANCHOR_SCALES = (16, 32, 64, 128)
-    TRAIN_ROIS_PER_IMAGE = 200
-    MAX_GT_INSTANCES = 4
-    DETECTION_MAX_INSTANCES = 3
-    DETECTION_MIN_CONFIDENCE = 0.97  ## match target distribution
-    DETECTION_NMS_THRESHOLD = 0.01
+
+    USE_MINI_MASK = False
+
+    TRAIN_ROIS_PER_IMAGE = 16
+    MAX_GT_INSTANCES = 5
+    DETECTION_MAX_INSTANCES = 4
+    DETECTION_MIN_CONFIDENCE = 0.78 # 0.78  ## match target distribution
+    DETECTION_NMS_THRESHOLD = 0.3
+    RPN_NMS_THRESHOLD  = 0.9
 
 class InferenceConfig(DetectorConfig):
     GPU_COUNT = 1
